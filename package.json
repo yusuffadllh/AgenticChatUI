@@ -9,32 +9,38 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@prisma/adapter-better-sqlite3": "^7.9.1",
+    "@prisma/client": "^7.9.1",
+    "@react-three/drei": "^9.108.3",
+    "@react-three/fiber": "^8.16.8",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@vercel/analytics": "^1.4.1",
+    "@vercel/speed-insights": "^1.0.12",
+    "archiver": "^8.0.0",
+    "better-sqlite3": "^13.0.3",
+    "file-saver": "^2.0.5",
+    "framer-motion": "^11.3.0",
+    "gsap": "^3.12.5",
+    "jszip": "^3.10.1",
+    "lucide-react": "^0.441.0",
     "next": "14.2.15",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^9.0.1",
     "remark-gfm": "^4.0.0",
-    "@prisma/client": "^7.9.1",
-    "framer-motion": "^11.3.0",
-    "gsap": "^3.12.5",
-    "@react-three/fiber": "^8.16.8",
-    "@react-three/drei": "^9.108.3",
+    "resend": "^3.5.0",
     "three": "^0.160.0",
-    "lucide-react": "^0.441.0",
-    "@vercel/analytics": "^1.4.1",
-    "@vercel/speed-insights": "^1.0.12",
-    "zod": "^3.23.8",
-    "resend": "^3.5.0"
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
-    "typescript": "^5",
-    "eslint": "^8",
-    "tailwindcss": "^3.4.1",
     "autoprefixer": "^10.0.1",
+    "eslint": "^8",
     "postcss": "^8",
-    "prisma": "^7.9.1"
+    "prisma": "^7.9.1",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5"
   }
 }

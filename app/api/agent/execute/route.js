@@ -138,6 +138,10 @@ Return a comprehensive final response in Markdown when the task is done.`;
             data: { status: 'RUNNING' }
           });
           
+          // Siapkan workspace directory untuk sesi ini
+          const workspaceDir = path.join(process.cwd(), 'workspaces', sessionId);
+          await fs.mkdir(workspaceDir, { recursive: true });
+          
           sendEvent('log', { message: 'Memulai eksekusi task...' });
 
           let isDone = false;
@@ -236,23 +240,30 @@ Return a comprehensive final response in Markdown when the task is done.`;
                   const args = JSON.parse(func.arguments || '{}');
                   
                   if (func.name === 'run_terminal_command') {
-                    sendEvent('log', { message: `> Menjalankan perintah: ${args.command}` });
+                    sendEvent('log', { message: `> Menjalankan perintah di workspace: ${args.command}` });
                     executionLogs.push(`> ${args.command}`);
-                    const { stdout, stderr } = await execAsync(args.command, { cwd: process.cwd(), timeout: 15000 });
+                    const { stdout, stderr } = await execAsync(args.command, { cwd: workspaceDir, timeout: 15000 });
                     const rawOutput = stdout || stderr || "Command executed successfully (no output).";
                     toolResult = rawOutput.length > 3000 ? rawOutput.substring(0, 3000) + '\n... (Output terpotong karena terlalu panjang)' : rawOutput;
                     sendEvent('log', { message: `✅ Output:\n${toolResult.substring(0, 200)}${toolResult.length > 200 ? '...' : ''}` });
                   } else if (func.name === 'write_file') {
-                    sendEvent('log', { message: `> Menulis file: ${args.filePath}` });
-                    const targetPath = path.resolve(process.cwd(), args.filePath);
+                    sendEvent('log', { message: `> Menulis file di workspace: ${args.filePath}` });
+                    // Amankan path agar tidak keluar dari workspace
+                    const targetPath = path.resolve(workspaceDir, args.filePath);
+                    if (!targetPath.startsWith(workspaceDir)) {
+                        throw new Error("Akses ditolak: Tidak boleh menulis di luar workspace");
+                    }
                     await fs.mkdir(path.dirname(targetPath), { recursive: true });
                     await fs.writeFile(targetPath, args.content, 'utf8');
                     executionLogs.push(`> Wrote to file: ${args.filePath}`);
                     toolResult = `File written successfully to ${args.filePath}`;
                     sendEvent('log', { message: `✅ Berhasil menulis ${args.filePath}` });
                   } else if (func.name === 'read_file') {
-                    sendEvent('log', { message: `> Membaca file: ${args.filePath}` });
-                    const targetPath = path.resolve(process.cwd(), args.filePath);
+                    sendEvent('log', { message: `> Membaca file dari workspace: ${args.filePath}` });
+                    const targetPath = path.resolve(workspaceDir, args.filePath);
+                    if (!targetPath.startsWith(workspaceDir)) {
+                        throw new Error("Akses ditolak: Tidak boleh membaca di luar workspace");
+                    }
                     const content = await fs.readFile(targetPath, 'utf8');
                     executionLogs.push(`> Read file: ${args.filePath}`);
                     toolResult = content.length > 10000 ? content.substring(0, 10000) + '\n... (File content truncated to 10k chars)' : content;

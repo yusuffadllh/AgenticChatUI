@@ -411,6 +411,9 @@ export default function Home() {
                     <button onClick={exportAsZip} style={{ background: 'var(--surface-border)', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '6px', cursor: 'pointer' }}>
                       💾 Export MD
                     </button>
+                    <a href={`/api/export?sessionId=${sessionId}`} target="_blank" rel="noopener noreferrer" style={{ background: 'var(--accent)', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '6px', cursor: 'pointer', textDecoration: 'none', display: 'flex', alignItems: 'center' }}>
+                      📦 Export Workspace ZIP
+                    </a>
                   </div>
                 </div>
               )}
