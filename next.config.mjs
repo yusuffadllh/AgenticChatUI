@@ -9,11 +9,14 @@ const nextConfig = {
   },
   webpack: (config, { isServer }) => {
     if (isServer) {
-      // Jangan bundle native module; biarkan di-require langsung dari node_modules
-      // supaya path binding better_sqlite3.node tidak rusak.
-      config.externals.push({
+      // Jangan bundle package native/binding; require langsung dari node_modules
+      // supaya resolusi path binding better_sqlite3.node tidak rusak saat runtime.
+      const externals = Array.isArray(config.externals) ? config.externals : [config.externals];
+      externals.unshift({
         "better-sqlite3": "commonjs better-sqlite3",
+        bindings: "commonjs bindings",
       });
+      config.externals = externals;
     }
     return config;
   },
