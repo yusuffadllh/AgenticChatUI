@@ -1,22 +1,36 @@
 {
-  "name": "ai-chat-app",
-  "version": "0.1.0",
+  "name": "neon-veil-portfolio",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "next lint"
   },
   "dependencies": {
-    "next": "16.3.1",
-    "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "next": "14.2.15",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "framer-motion": "^11.3.0",
+    "gsap": "^3.12.5",
+    "@react-three/fiber": "^8.16.8",
+    "@react-three/drei": "^9.108.3",
+    "three": "^0.160.0",
+    "lucide-react": "^0.441.0",
+    "@vercel/analytics": "^1.4.1",
+    "@vercel/speed-insights": "^1.0.12",
+    "zod": "^3.23.8",
+    "resend": "^3.5.0"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "eslint": "^9",
-    "eslint-config-next": "16.3.1",
-    "tailwindcss": "^4"
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "typescript": "^5",
+    "eslint": "^8",
+    "tailwindcss": "^3.4.1",
+    "autoprefixer": "^10.0.1",
+    "postcss": "^8"
   }
 }

@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  .glass {
+    background: rgba(30, 30, 46, 0.85);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(0, 245, 255, 0.25);
+  }
+  
+  .neon-text {
+    text-shadow: 0 0 20px rgb(0 245 255);
+  }
+}
+
+@layer components {
+  .hero-canvas {
+    background: linear-gradient(180deg, #0A0A0A, #1E1E2E);
+  }
+}

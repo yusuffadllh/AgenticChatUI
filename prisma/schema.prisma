@@ -1,0 +1,41 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Settings {
+  id        Int    @id @default(1)
+  baseUrl   String @default("https://openrouter.ai/api/v1")
+  apiKey    String @default("")
+  modelName String @default("google/gemini-2.5-pro")
+}
+
+model Session {
+  id        String    @id @default(uuid())
+  goal      String
+  createdAt DateTime  @default(now())
+  messages  Message[]
+  tasks     Task[]
+}
+
+model Task {
+  id          String   @id @default(uuid())
+  sessionId   String
+  session     Session  @relation(fields: [sessionId], references: [id])
+  description String
+  status      String   @default("PENDING") // PENDING, RUNNING, COMPLETED
+  result      String?
+  createdAt   DateTime @default(now())
+}
+
+model Message {
+  id        String   @id @default(uuid())
+  sessionId String
+  session   Session  @relation(fields: [sessionId], references: [id])
+  role      String   // user, planner, executor
+  content   String
+  createdAt DateTime @default(now())
+}
