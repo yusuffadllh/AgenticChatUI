@@ -1,7 +1,23 @@
 import { NextResponse } from 'next/server';
-import archiver from 'archiver';
+import JSZip from 'jszip';
 import fs from 'fs';
 import path from 'path';
+
+// Fungsi rekursif untuk menambahkan file ke JSZip
+function addFilesToZip(zip, dirPath, basePath) {
+  const files = fs.readdirSync(dirPath);
+  for (const file of files) {
+    const fullPath = path.join(dirPath, file);
+    const relativePath = path.relative(basePath, fullPath);
+    
+    if (fs.statSync(fullPath).isDirectory()) {
+      addFilesToZip(zip, fullPath, basePath);
+    } else {
+      const fileData = fs.readFileSync(fullPath);
+      zip.file(relativePath, fileData);
+    }
+  }
+}
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -17,32 +33,21 @@ export async function GET(request) {
     return NextResponse.json({ error: 'Workspace not found for this session. The agent has not created any files yet.' }, { status: 404 });
   }
 
-  // Set up the response stream
-  const { readable, writable } = new TransformStream();
-  const writer = writable.getWriter();
+  try {
+    const zip = new JSZip();
+    addFilesToZip(zip, workspaceDir, workspaceDir);
 
-  const archive = archiver('zip', {
-    zlib: { level: 9 } // Sets the compression level.
-  });
+    // Generate zip as nodebuffer
+    const zipBuffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
 
-  archive.on('error', (err) => {
-    throw err;
-  });
-
-  // Pipe the archive data to our writable stream
-  archive.on('data', (chunk) => writer.write(chunk));
-  archive.on('end', () => writer.close());
-
-  // Add the workspace directory contents to the archive
-  archive.directory(workspaceDir, false);
-
-  // Finalize the archive (this will trigger the end event when done)
-  archive.finalize();
-
-  return new NextResponse(readable, {
-    headers: {
-      'Content-Type': 'application/zip',
-      'Content-Disposition': `attachment; filename="workspace-${sessionId}.zip"`,
-    },
-  });
+    return new NextResponse(zipBuffer, {
+      headers: {
+        'Content-Type': 'application/zip',
+        'Content-Disposition': `attachment; filename="workspace-${sessionId}.zip"`,
+      },
+    });
+  } catch (error) {
+    console.error('ZIP generation error:', error);
+    return NextResponse.json({ error: 'Failed to generate ZIP' }, { status: 500 });
+  }
 }

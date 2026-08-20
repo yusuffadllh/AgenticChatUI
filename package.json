@@ -16,7 +16,6 @@
     "@tailwindcss/postcss": "^4.3.3",
     "@vercel/analytics": "^1.4.1",
     "@vercel/speed-insights": "^1.0.12",
-    "archiver": "^8.0.0",
     "better-sqlite3": "^13.0.3",
     "file-saver": "^2.0.5",
     "framer-motion": "^11.3.0",
