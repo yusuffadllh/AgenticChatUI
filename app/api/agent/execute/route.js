@@ -1,57 +1,12 @@
 import { prisma } from '@/lib/prisma';
 import { NextResponse } from 'next/server';
-import { exec } from 'child_process';
 import fs from 'fs/promises';
 import path from 'path';
-import util from 'util';
+import { runOpencode } from '@/lib/opencode';
 
-const execAsync = util.promisify(exec);
-
-const tools = [
-  {
-    type: "function",
-    function: {
-      name: "run_terminal_command",
-      description: "Run a terminal command (e.g. npm install, mkdir, node script.js). Runs in the root of the project.",
-      parameters: {
-        type: "object",
-        properties: {
-          command: { type: "string" }
-        },
-        required: ["command"]
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "write_file",
-      description: "Write content to a file. Path should be relative to project root.",
-      parameters: {
-        type: "object",
-        properties: {
-          filePath: { type: "string" },
-          content: { type: "string" }
-        },
-        required: ["filePath", "content"]
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "read_file",
-      description: "Read the content of a file. Path should be relative to project root.",
-      parameters: {
-        type: "object",
-        properties: {
-          filePath: { type: "string" }
-        },
-        required: ["filePath"]
-      }
-    }
-  }
-];
+export const dynamic = 'force-dynamic';
+// Executor may run long-lived agent processes.
+export const maxDuration = 300;
 
 export async function POST(request) {
   try {
@@ -87,224 +42,101 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Task not found in session' }, { status: 404 });
     }
 
-    const systemPrompt = `You are an AI executor in an autonomous agent system. 
-The user's overall goal is: "${session.goal}". 
-Your current task to execute is: "${currentTask.description}". 
-You have access to tools to run terminal commands, read files, and write files. Use them if necessary to accomplish the task.
-Return a comprehensive final response in Markdown when the task is done.`;
+    // Build a rich prompt: overall goal + prior task results for continuity.
+    const priorContext = session.tasks
+      .filter((t) => t.id !== taskId && t.result)
+      .map((t, i) => `Previous task ${i + 1}: ${t.description}\nResult summary: ${(t.result || '').slice(0, 800)}`)
+      .join('\n\n');
 
-    let messages = [
-      { role: 'system', content: systemPrompt }
-    ];
-    
-    if (session.messages && session.messages.length > 0) {
-      messages = messages.concat(
-        session.messages.map(m => ({
-          role: m.role === 'executor' ? 'assistant' : m.role,
-          content: m.content
-        }))
-      );
-    }
-
-    messages.push({ role: 'user', content: `Please execute this task: ${currentTask.description}` });
+    const prompt = [
+      `Overall goal: ${session.goal}`,
+      priorContext ? `\nContext from earlier tasks:\n${priorContext}` : '',
+      `\nYour current task: ${currentTask.description}`,
+      `\nWork inside the current directory only. Create/modify files and run commands as needed to fully accomplish the task. When finished, summarize what you did.`,
+    ]
+      .filter(Boolean)
+      .join('\n');
 
     const encoder = new TextEncoder();
     const signal = request.signal;
-    
-    // We start the SSE stream
+
     const stream = new ReadableStream({
       async start(controller) {
-        // Interval untuk mengirim ping (keep-alive) setiap 15 detik agar koneksi tidak diputus browser/Next.js
-        let pingInterval = setInterval(() => {
-          if (controller) {
-            try {
-              controller.enqueue(encoder.encode(`:\n\n`)); // Komentar SSE, diabaikan oleh client
-            } catch (e) {}
-          }
+        const pingInterval = setInterval(() => {
+          try { controller.enqueue(encoder.encode(`:\n\n`)); } catch {}
         }, 15000);
 
         const sendEvent = (type, payload) => {
           try {
-            const dataStr = JSON.stringify({ type, ...payload });
-            controller.enqueue(encoder.encode(`data: ${dataStr}\n\n`));
-          } catch (e) {
-            // connection might be closed
-          }
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type, ...payload })}\n\n`));
+          } catch {}
+        };
+
+        const finish = () => {
+          clearInterval(pingInterval);
+          try { controller.close(); } catch {}
         };
 
         try {
-          await prisma.task.updateMany({
-            where: { id: taskId },
-            data: { status: 'RUNNING' }
-          });
-          
-          // Siapkan workspace directory untuk sesi ini
+          await prisma.task.updateMany({ where: { id: taskId }, data: { status: 'RUNNING' } });
+
+          // Isolated workspace directory for this session.
           const workspaceDir = path.join(process.cwd(), 'workspaces', sessionId);
           await fs.mkdir(workspaceDir, { recursive: true });
-          
-          sendEvent('log', { message: 'Memulai eksekusi task...' });
 
-          let isDone = false;
-          let finalOutput = "";
-          let loopCount = 0;
-          const maxLoops = 10;
-          const executionLogs = [];
+          sendEvent('log', { message: `🚀 Menjalankan OpenCode untuk task: ${currentTask.description}` });
+          sendEvent('log', { message: `📁 Workspace: workspaces/${sessionId}` });
 
-          while (!isDone && loopCount < maxLoops) {
-            if (signal && signal.aborted) {
-              finalOutput = "Error: Execution was manually stopped by the user.";
-              sendEvent('log', { message: '⛔ Eksekusi dibatalkan oleh user.' });
-              break;
-            }
+          const capturedLines = [];
+          let exitCode = 0;
 
-            loopCount++;
-            sendEvent('log', { message: `\n[Loop ${loopCount}] Menunggu respons AI...` });
-
-            const timeoutController = new AbortController();
-            const timeoutId = setTimeout(() => timeoutController.abort(), 300000); // 300 detik maksimal (5 menit)
-            
-            // Gabungkan signal dari user (jika user klik stop) dan timeout
-            const onAbort = () => timeoutController.abort();
-            if (signal) signal.addEventListener('abort', onAbort);
-
-            let response;
-            try {
-              response = await fetch(`${settings.baseUrl}/chat/completions`, {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${settings.apiKey}`,
-                  'Content-Type': 'application/json',
-                  'HTTP-Referer': 'http://localhost:3000', 
-                  'X-Title': 'AI Chat App'
-                },
-                body: JSON.stringify({
-                  model: settings.modelName || 'google/gemini-2.5-pro',
-                  messages: messages,
-                  tools: tools,
-                  tool_choice: 'auto'
-                }),
-                signal: timeoutController.signal
-              });
-            } catch (fetchErr) {
-              if (fetchErr.name === 'AbortError') {
-                if (signal && signal.aborted) {
-                  throw new Error("Dibatalkan oleh user.");
-                } else {
-                  throw new Error("Timeout: AI provider memakan waktu lebih dari 5 menit untuk merespons. Proses dibatalkan agar tidak menggantung selamanya. Kemungkinan prompt terlalu besar atau API kelebihan beban.");
+          try {
+            exitCode = await runOpencode({
+              prompt,
+              cwd: workspaceDir,
+              settings,
+              signal,
+              onOutput: (line) => {
+                capturedLines.push(line);
+                // Cap forwarded log volume to keep the UI responsive.
+                if (capturedLines.length <= 2000) {
+                  sendEvent('log', { message: line });
                 }
-              }
-              throw fetchErr;
-            }
-            
-            clearTimeout(timeoutId);
-            if (signal) signal.removeEventListener('abort', onAbort);
-
-            if (!response.ok) {
-              const errorText = await response.text();
-              sendEvent('log', { message: `❌ API Error: ${response.status} ${errorText}` });
-              await prisma.task.updateMany({ where: { id: taskId }, data: { status: 'PENDING' } });
-              sendEvent('error', { error: 'Failed to communicate with API', details: errorText });
-              controller.close();
-              return;
-            }
-
-            let data;
-            try {
-              const rawText = await response.text();
-              let cleanedText = rawText;
-              const lastBraceIndex = cleanedText.lastIndexOf('}');
-              if (lastBraceIndex !== -1) {
-                cleanedText = cleanedText.substring(0, lastBraceIndex + 1);
-              }
-              data = JSON.parse(cleanedText);
-            } catch (parseError) {
-              await prisma.task.updateMany({ where: { id: taskId }, data: { status: 'PENDING' } });
-              sendEvent('error', { error: 'Invalid JSON from API' });
-              controller.close();
-              return;
-            }
-
-            const message = data.choices?.[0]?.message;
-            if (!message) {
-              throw new Error("No message returned from API");
-            }
-
-            messages.push(message);
-
-            if (message.tool_calls && message.tool_calls.length > 0) {
-              for (const toolCall of message.tool_calls) {
-                const func = toolCall.function;
-                let toolResult = "";
-                
-                try {
-                  const args = JSON.parse(func.arguments || '{}');
-                  
-                  if (func.name === 'run_terminal_command') {
-                    sendEvent('log', { message: `> Menjalankan perintah di workspace: ${args.command}` });
-                    executionLogs.push(`> ${args.command}`);
-                    const { stdout, stderr } = await execAsync(args.command, { cwd: workspaceDir, timeout: 15000 });
-                    const rawOutput = stdout || stderr || "Command executed successfully (no output).";
-                    toolResult = rawOutput.length > 3000 ? rawOutput.substring(0, 3000) + '\n... (Output terpotong karena terlalu panjang)' : rawOutput;
-                    sendEvent('log', { message: `✅ Output:\n${toolResult.substring(0, 200)}${toolResult.length > 200 ? '...' : ''}` });
-                  } else if (func.name === 'write_file') {
-                    sendEvent('log', { message: `> Menulis file di workspace: ${args.filePath}` });
-                    // Amankan path agar tidak keluar dari workspace
-                    const targetPath = path.resolve(workspaceDir, args.filePath);
-                    if (!targetPath.startsWith(workspaceDir)) {
-                        throw new Error("Akses ditolak: Tidak boleh menulis di luar workspace");
-                    }
-                    await fs.mkdir(path.dirname(targetPath), { recursive: true });
-                    await fs.writeFile(targetPath, args.content, 'utf8');
-                    executionLogs.push(`> Wrote to file: ${args.filePath}`);
-                    toolResult = `File written successfully to ${args.filePath}`;
-                    sendEvent('log', { message: `✅ Berhasil menulis ${args.filePath}` });
-                  } else if (func.name === 'read_file') {
-                    sendEvent('log', { message: `> Membaca file dari workspace: ${args.filePath}` });
-                    const targetPath = path.resolve(workspaceDir, args.filePath);
-                    if (!targetPath.startsWith(workspaceDir)) {
-                        throw new Error("Akses ditolak: Tidak boleh membaca di luar workspace");
-                    }
-                    const content = await fs.readFile(targetPath, 'utf8');
-                    executionLogs.push(`> Read file: ${args.filePath}`);
-                    toolResult = content.length > 10000 ? content.substring(0, 10000) + '\n... (File content truncated to 10k chars)' : content;
-                    sendEvent('log', { message: `✅ Selesai membaca file (${content.length} karakter)` });
-                  } else {
-                    toolResult = `Unknown tool: ${func.name}`;
-                    sendEvent('log', { message: `❌ Tool tidak dikenal: ${func.name}` });
-                  }
-                } catch (err) {
-                  toolResult = `Error: ${err.message}`;
-                  executionLogs.push(`> Error in ${func.name}: ${err.message}`);
-                  sendEvent('log', { message: `❌ Error: ${err.message}` });
-                }
-                
-                messages.push({
-                  role: 'tool',
-                  tool_call_id: toolCall.id,
-                  name: func.name,
-                  content: toolResult
-                });
-              }
-            } else {
-              finalOutput = message.content || 'Task completed with no output.';
-              sendEvent('log', { message: `🏁 Tugas Selesai!` });
-              isDone = true;
-            }
+              },
+            });
+          } catch (runErr) {
+            const hint = /ENOENT/.test(runErr.message)
+              ? ' — Pastikan "opencode" terinstall & ada di PATH (set OPENCODE_BIN bila perlu).'
+              : '';
+            sendEvent('log', { message: `❌ Gagal menjalankan OpenCode: ${runErr.message}${hint}` });
+            await prisma.task.updateMany({ where: { id: taskId }, data: { status: 'PENDING' } });
+            sendEvent('error', { error: 'OpenCode execution failed', details: runErr.message });
+            finish();
+            return;
           }
 
-          if (!isDone) {
-            finalOutput = "Error: Maximum tool execution loops (10) exceeded. The task was stopped before finishing.\n\n" + (messages[messages.length - 1]?.content || '');
-            sendEvent('log', { message: `⛔ Loop maksimum tercapai. Tugas dihentikan paksa.` });
+          if (signal && signal.aborted) {
+            sendEvent('log', { message: '⛔ Eksekusi dibatalkan oleh user.' });
+            await prisma.task.updateMany({ where: { id: taskId }, data: { status: 'PENDING' } });
+            sendEvent('done', { tasks: session.tasks });
+            finish();
+            return;
           }
 
-          let formattedOutput = finalOutput;
-          if (executionLogs.length > 0) {
-            formattedOutput = `**Terminal & File Execution Logs:**\n\`\`\`text\n${executionLogs.join('\n')}\n\`\`\`\n\n---\n\n${finalOutput}`;
-          }
+          const rawOutput = capturedLines.join('\n');
+          const truncated = rawOutput.length > 20000
+            ? rawOutput.slice(-20000) + '\n... (log dipotong)'
+            : rawOutput;
+
+          const header = exitCode === 0
+            ? `✅ OpenCode selesai (exit ${exitCode}).`
+            : `⚠️ OpenCode selesai dengan exit code ${exitCode}.`;
+
+          const formattedOutput = `${header}\n\n**OpenCode Output:**\n\`\`\`text\n${truncated || '(tidak ada output)'}\n\`\`\``;
 
           await prisma.task.updateMany({
             where: { id: taskId },
-            data: { status: 'COMPLETED', result: formattedOutput }
+            data: { status: 'COMPLETED', result: formattedOutput },
           });
 
           try {
@@ -312,22 +144,22 @@ Return a comprehensive final response in Markdown when the task is done.`;
               data: {
                 sessionId,
                 role: 'executor',
-                content: `**[Task: ${currentTask.description}]**\n\n${formattedOutput}`
-              }
+                content: `**[Task: ${currentTask.description}]**\n\n${formattedOutput}`,
+              },
             });
-          } catch (e) {}
+          } catch {}
 
           const updatedTasks = await prisma.task.findMany({
             where: { sessionId },
-            orderBy: { createdAt: 'asc' }
+            orderBy: { createdAt: 'asc' },
           });
 
+          sendEvent('log', { message: '🏁 Task selesai.' });
           sendEvent('done', { tasks: updatedTasks });
-          controller.close();
-          
+          finish();
         } catch (error) {
           sendEvent('error', { error: 'Internal server error', details: error.message });
-          controller.close();
+          finish();
         }
       }
     });
