@@ -27,11 +27,12 @@ export default function FileBrowser({ sessionId, onClose }) {
   const [selectedFile, setSelectedFile] = useState(null); // { path, content, size, binary, tooLarge }
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [autoRefresh, setAutoRefresh] = useState(true);
 
-  const loadDir = useCallback(async (dirPath) => {
-    setLoading(true);
-    setError('');
-    setSelectedFile(null);
+  // Fetch a directory listing. When `silent` we don't toggle loading UI or
+  // clear the open file — used by the auto-refresh timer to avoid flicker.
+  const fetchDir = useCallback(async (dirPath, { silent = false } = {}) => {
+    if (!silent) { setLoading(true); setError(''); }
     try {
       const res = await fetch(`/api/agent/files?sessionId=${sessionId}&path=${encodeURIComponent(dirPath)}`);
       const data = await res.json();
@@ -39,31 +40,47 @@ export default function FileBrowser({ sessionId, onClose }) {
       setEntries(data.entries || []);
       setPath(data.path || '');
     } catch (e) {
-      setError(e.message);
-      setEntries([]);
+      if (!silent) { setError(e.message); setEntries([]); }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [sessionId]);
 
-  const openFile = async (filePath) => {
-    setLoading(true);
-    setError('');
+  const loadDir = useCallback(async (dirPath) => {
+    setSelectedFile(null);
+    await fetchDir(dirPath);
+  }, [fetchDir]);
+
+  const openFile = useCallback(async (filePath, { silent = false } = {}) => {
+    if (!silent) { setLoading(true); setError(''); }
     try {
       const res = await fetch(`/api/agent/files?sessionId=${sessionId}&mode=read&path=${encodeURIComponent(filePath)}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Gagal membuka file');
       setSelectedFile(data);
     } catch (e) {
-      setError(e.message);
+      if (!silent) setError(e.message);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
-  };
+  }, [sessionId]);
 
   useEffect(() => {
     loadDir('');
   }, [loadDir]);
+
+  // Auto-refresh: silently re-fetch the current folder and the open file so
+  // files the agent creates/updates appear without manual reload.
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const id = setInterval(() => {
+      fetchDir(path, { silent: true });
+      if (selectedFile && !selectedFile.binary && !selectedFile.tooLarge) {
+        openFile(selectedFile.path, { silent: true });
+      }
+    }, 3000);
+    return () => clearInterval(id);
+  }, [autoRefresh, path, selectedFile, fetchDir, openFile]);
 
   const goUp = () => {
     if (!path) return;
@@ -92,7 +109,20 @@ export default function FileBrowser({ sessionId, onClose }) {
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
           <h3 style={{ color: 'var(--accent)', margin: 0 }}>📂 File Project</h3>
-          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '1.4rem', cursor: 'pointer' }}>×</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer', userSelect: 'none' }} title="Refresh otomatis tiap 3 detik">
+              <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
+              🔄 Auto-refresh
+            </label>
+            <button
+              onClick={() => { fetchDir(path); if (selectedFile) openFile(selectedFile.path); }}
+              title="Refresh sekarang"
+              style={{ background: 'var(--input-bg)', border: '1px solid var(--surface-border)', color: '#fff', padding: '0.25rem 0.6rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem' }}
+            >
+              ⟳
+            </button>
+            <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '1.4rem', cursor: 'pointer' }}>×</button>
+          </div>
         </div>
 
         {/* Breadcrumb */}
