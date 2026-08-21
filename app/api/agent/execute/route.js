@@ -57,9 +57,11 @@ export async function POST(request) {
       `\nYour current task: ${currentTask.description}`,
       `\nIMPORTANT RULES:`,
       `- You are running fully autonomously with NO human to answer questions. NEVER ask for confirmation or reply with a question like "Would you like me to...". Just DO the work.`,
-      `- Actually create and modify real files and run the commands needed to COMPLETE this task now. Do not merely plan, describe, or propose.`,
-      `- Work only inside the current directory.`,
-      `- When the task is fully done, end with a short summary of the concrete files you created/changed.`,
+      `- The working directory may be EMPTY at the start — that is expected and normal. Do NOT go looking through the filesystem for existing files, and NEVER inspect, list, cd into, or read hidden/system folders (anything starting with a dot like .opencode-home, or node_modules). Just start creating the files this task needs.`,
+      `- Do the task in AT MOST a few steps. If this is a planning/analysis/design task, do NOT browse the filesystem at all — just write your plan/output to a Markdown file (e.g. PLAN.md or an appropriately named .md file) and finish.`,
+      `- Actually create and modify real files and run the commands needed to COMPLETE this task now. Do not merely describe or propose.`,
+      `- Work only inside the current directory and only with files relevant to the goal.`,
+      `- When the task is fully done, end IMMEDIATELY with a short summary of the concrete files you created/changed. Do not keep exploring after the deliverable exists.`,
     ]
       .filter(Boolean)
       .join('\n');
