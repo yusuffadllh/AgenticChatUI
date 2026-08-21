@@ -4,7 +4,7 @@ export default function SettingsModal({ settings, setSettings, onSave, onCancel 
   return (
     <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
       <div className="glass" style={{ padding: '2rem', borderRadius: '16px', width: '400px', background: 'rgba(20, 22, 32, 0.95)' }}>
-        <h2 style={{ marginBottom: '1.5rem' }}>Konfigurasi OpenRouter</h2>
+        <h2 style={{ marginBottom: '1.5rem' }}>Konfigurasi Gateway</h2>
         
         <div style={{ marginBottom: '1rem' }}>
           <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Base URL</label>

@@ -338,6 +338,13 @@ export default function Home() {
     }
   }, [tasks, executingSessions, isReviewing, hasSubmitted, isStopped, maxLoops, loopCount, sessionId]);
 
+  // Tampilkan API key tersensor: 4 char pertama + 4 char terakhir saja.
+  const maskApiKey = (key) => {
+    if (!key) return 'API key belum diatur';
+    if (key.length <= 8) return '••••••••';
+    return `${key.slice(0, 4)}••••${key.slice(-4)}`;
+  };
+
   // Auto-scroll live logs
   const logsEndRef = useRef(null);
   useEffect(() => {
@@ -370,7 +377,24 @@ export default function Home() {
               <h1 style={{ fontSize: '1.8rem', fontWeight: '800', textAlign: 'center', background: 'linear-gradient(90deg, #bb86fc, #90caf9)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
                 Antigravity Agent
               </h1>
-              
+
+              {/* Config aktif: berubah otomatis saat baseURL / model / API key diganti. */}
+              <div
+                onClick={() => setShowSettings(true)}
+                title="Klik untuk mengubah konfigurasi"
+                style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '0.5rem', marginTop: '-0.5rem', cursor: 'pointer' }}
+              >
+                <span style={{ fontSize: '0.72rem', padding: '0.25rem 0.6rem', borderRadius: '999px', background: 'rgba(144,202,249,0.12)', border: '1px solid rgba(144,202,249,0.3)', color: '#90caf9' }}>
+                  🔗 {settings.baseUrl || 'baseURL belum diatur'}
+                </span>
+                <span style={{ fontSize: '0.72rem', padding: '0.25rem 0.6rem', borderRadius: '999px', background: 'rgba(187,134,252,0.12)', border: '1px solid rgba(187,134,252,0.3)', color: '#bb86fc' }}>
+                  🤖 {settings.modelName || 'model belum diatur'}
+                </span>
+                <span style={{ fontSize: '0.72rem', padding: '0.25rem 0.6rem', borderRadius: '999px', background: 'rgba(129,199,132,0.12)', border: '1px solid rgba(129,199,132,0.3)', color: '#81c784' }}>
+                  🔑 {maskApiKey(settings.apiKey)}
+                </span>
+              </div>
+
               {!hasSubmitted ? (
                 <div style={{ width: '100%', maxWidth: '800px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                   <div className="input-box" style={{ borderRadius: '24px', padding: '0.5rem', display: 'flex', alignItems: 'center' }}>
