@@ -55,7 +55,11 @@ export async function POST(request) {
       `Overall goal: ${session.goal}`,
       priorContext ? `\nContext from earlier tasks:\n${priorContext}` : '',
       `\nYour current task: ${currentTask.description}`,
-      `\nWork inside the current directory only. Create/modify files and run commands as needed to fully accomplish the task. When finished, summarize what you did.`,
+      `\nIMPORTANT RULES:`,
+      `- You are running fully autonomously with NO human to answer questions. NEVER ask for confirmation or reply with a question like "Would you like me to...". Just DO the work.`,
+      `- Actually create and modify real files and run the commands needed to COMPLETE this task now. Do not merely plan, describe, or propose.`,
+      `- Work only inside the current directory.`,
+      `- When the task is fully done, end with a short summary of the concrete files you created/changed.`,
     ]
       .filter(Boolean)
       .join('\n');
