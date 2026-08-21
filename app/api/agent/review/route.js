@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { NextResponse } from 'next/server';
+import { buildBudgetedPrompt } from '@/lib/context';
 
 export async function POST(request) {
   try {
@@ -24,14 +25,20 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
     }
 
-    // Format previous tasks for context. Cap each result so a long log can't
-    // bloat the review prompt into a too-large payload the gateway rejects.
-    const taskContext = session.tasks
-      .map((t, i) => {
-        const res = (t.result || 'No output').slice(0, 600);
-        return `Task ${i + 1} [${t.status}]: ${t.description}\nResult: ${res}`;
-      })
-      .join('\n\n');
+    // Format previous tasks for context. Cap each result, then apply an overall
+    // token budget (most recent tasks kept first) so the review prompt never
+    // starts out as an oversized payload the gateway rejects.
+    const taskContext = buildBudgetedPrompt(
+      session.tasks
+        .map((t, i) => ({
+          text: `Task ${i + 1} [${t.status}]: ${t.description}\nResult: ${(t.result || 'No output').slice(0, 600)}`,
+          // Newer tasks matter more for the review, so give them higher priority.
+          priority: i,
+          truncatable: true,
+        }))
+        .reverse(),
+      120000,
+    );
 
     const systemPrompt = `You are the Reviewer Agent in an autonomous AI loop.
 The user's original goal is: "${session.goal}"

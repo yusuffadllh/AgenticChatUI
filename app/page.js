@@ -7,6 +7,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
+import { cleanGoalInput } from '../lib/context';
 
 export default function Home() {
   const [settings, setSettings] = useState({ baseUrl: '', apiKey: '', modelName: '' });
@@ -214,12 +215,15 @@ export default function Home() {
     setIsStopped(false);
     setLoopCount(0);
     setLiveLogs('');
-    
+
+    // Strip web-paste junk (e.g. GitHub "Public / Updated X ago") before sending.
+    const cleanedGoal = cleanGoalInput(goal);
+
     try {
       const res = await fetch('/api/agent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ goal, sessionId })
+        body: JSON.stringify({ goal: cleanedGoal, sessionId })
       });
       
       const data = await res.json();

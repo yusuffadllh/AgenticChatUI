@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import fs from 'fs/promises';
 import path from 'path';
 import { runOpencode } from '@/lib/opencode';
+import { buildBudgetedPrompt } from '@/lib/context';
 
 export const dynamic = 'force-dynamic';
 // Executor runs long-lived agent processes; allow up to ~30 min.
@@ -51,21 +52,31 @@ export async function POST(request) {
       .map((t, i) => `Previous task ${i + 1}: ${t.description}\nResult summary: ${(t.result || '').slice(0, 300)}`)
       .join('\n\n');
 
-    const prompt = [
-      `Overall goal: ${session.goal}`,
-      priorContext ? `\nContext from earlier tasks:\n${priorContext}` : '',
-      `\nYour current task: ${currentTask.description}`,
-      `\nIMPORTANT RULES:`,
+    const rules = [
+      `IMPORTANT RULES:`,
       `- You are running fully autonomously with NO human to answer questions. NEVER ask for confirmation or reply with a question like "Would you like me to...". Just DO the work.`,
       `- The working directory may be EMPTY at the start — that is expected and normal. Do NOT go looking through the filesystem for existing files, and NEVER inspect, list, cd into, or read hidden/system folders (anything starting with a dot like .opencode-home, or node_modules). Just start creating the files this task needs.`,
       `- Do the task in AT MOST a few steps. If this is a planning/analysis/design task, do NOT browse the filesystem at all — just write your plan/output to a Markdown file (e.g. PLAN.md or an appropriately named .md file) and finish.`,
       `- Actually create and modify real files and run the commands needed to COMPLETE this task now. Do not merely describe or propose.`,
-      `- KEEP EACH FILE-WRITE SMALL. The tool call fails ("exit code 1" / JSON parse error) when a single write payload is too large. Write each file in small pieces: create the file with a short first chunk, then append the rest with several follow-up edits/appends. Prefer many small writes over one giant write. Never emit a single write bigger than ~150 lines.`,
+      `- KEEP EVERY OUTPUT SMALL AND INCREMENTAL FROM THE START. Do NOT emit one big response or one giant file write — the tool call fails ("exit code 1" / JSON parse error) when a single payload is too large. Always begin with a small first chunk, then build up gradually with several follow-up edits/appends. Never emit a single write bigger than ~150 lines.`,
       `- Work only inside the current directory and only with files relevant to the goal.`,
       `- When the task is fully done, end IMMEDIATELY with a short summary of the concrete files you created/changed. Do not keep exploring after the deliverable exists.`,
-    ]
-      .filter(Boolean)
-      .join('\n');
+    ].join('\n');
+
+    // Assemble the prompt within a token budget. Rules + current task are
+    // essential (never truncated); the overall goal and prior-task context are
+    // truncated first if we approach the limit — so the payload starts small
+    // and stays under ~150k tokens.
+    const prompt = buildBudgetedPrompt(
+      [
+        { text: `IMPORTANT RULES ARE BELOW — follow them strictly.`, priority: 10, truncatable: false },
+        { text: `Your current task: ${currentTask.description}`, priority: 9, truncatable: false },
+        { text: rules, priority: 8, truncatable: false },
+        { text: `Overall goal: ${session.goal}`, priority: 5, truncatable: true },
+        priorContext ? { text: `Context from earlier tasks:\n${priorContext}`, priority: 1, truncatable: true } : null,
+      ].filter(Boolean),
+      150000,
+    );
 
     const encoder = new TextEncoder();
     const signal = request.signal;

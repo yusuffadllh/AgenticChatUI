@@ -1,13 +1,21 @@
 import { prisma } from '@/lib/prisma';
 import { NextResponse } from 'next/server';
+import { cleanGoalInput, buildBudgetedPrompt } from '@/lib/context';
 
 export async function POST(request) {
   try {
-    const { goal, sessionId } = await request.json();
+    const { goal: rawGoal, sessionId } = await request.json();
 
-    if (!goal) {
+    if (!rawGoal) {
       return NextResponse.json({ error: 'Goal is required' }, { status: 400 });
     }
+
+    // Clean web-paste junk and cap the goal to a safe token budget so the
+    // planner request to the gateway never starts out oversized.
+    const goal = buildBudgetedPrompt(
+      [{ text: cleanGoalInput(rawGoal), truncatable: true }],
+      150000,
+    );
 
     const settings = await prisma.settings.findUnique({ where: { id: 1 } });
     if (!settings || !settings.apiKey) {
