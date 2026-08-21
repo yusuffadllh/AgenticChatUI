@@ -9,12 +9,24 @@ export const dynamic = 'force-dynamic';
 // Deploy can take a while (install + build + upload); allow up to ~30 min.
 export const maxDuration = 1800;
 
+// Vercel project names: lowercase, alphanumeric + dashes, <=100 chars.
+function slugifyProjectName(raw) {
+  if (!raw) return '';
+  return String(raw)
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 100);
+}
+
 export async function POST(request) {
   try {
-    const { sessionId } = await request.json();
+    const { sessionId, projectName: rawProjectName } = await request.json();
     if (!sessionId) {
       return NextResponse.json({ error: 'sessionId is required' }, { status: 400 });
     }
+    const projectName = slugifyProjectName(rawProjectName);
 
     const settings = await prisma.settings.findUnique({ where: { id: 1 } });
     if (!settings || !settings.apiKey) {
@@ -36,15 +48,16 @@ export async function POST(request) {
     // Build a deploy-only instruction listing only the platforms whose token
     // is configured. The tokens themselves are injected as env vars by
     // runOpencode, so the model never sees or prints them.
+    const vercelNameFlag = projectName ? ` --name "${projectName}"` : '';
     const deployTargets = [];
     if (settings.vercelToken) {
       deployTargets.push(
-        `- Vercel (env VERCEL_TOKEN is set): run \`npx --yes vercel deploy --prod --yes --token="$VERCEL_TOKEN"\` from the project root. Vercel auto-detects the framework.`,
+        `- Vercel (env VERCEL_TOKEN is set): run \`npx --yes vercel deploy --prod --yes${vercelNameFlag} --token="$VERCEL_TOKEN"\` from the project root. Vercel auto-detects the framework.${projectName ? ` The site should be reachable at https://${projectName}.vercel.app once live.` : ''}`,
       );
     }
     if (settings.netlifyToken) {
       deployTargets.push(
-        `- Netlify (env NETLIFY_AUTH_TOKEN is set): build first if needed, then run \`npx --yes netlify deploy --prod --dir=<build-output-dir> --auth "$NETLIFY_AUTH_TOKEN"\` (use the correct output dir: dist/build/out/ or . for static).`,
+        `- Netlify (env NETLIFY_AUTH_TOKEN is set): build first if needed, then run \`npx --yes netlify deploy --prod --dir=<build-output-dir> --auth "$NETLIFY_AUTH_TOKEN"\` (use the correct output dir: dist/build/out/ or . for static).${projectName ? ` If Netlify asks for a site name, use "${projectName}".` : ''}`,
       );
     }
 
@@ -61,6 +74,9 @@ export async function POST(request) {
             `- Prefer Vercel for Next.js/frontend apps, Netlify for static sites. Pick ONE platform below and deploy.`,
             ...deployTargets,
             `- The credentials are already provided via environment variables. Do NOT ask for tokens or logins, and NEVER print token values.`,
+            projectName
+              ? `- The desired project/site name is "${projectName}". Try to make the deployed URL use it (e.g. Vercel: pass --name "${projectName}", or add a vercel.json with {"name":"${projectName}"}, or rename the deploy). If the platform ignores the name, that's OK — just report whatever final URL it gives.`
+              : `- Let the platform pick the project name automatically.`,
             `- Install dependencies and build only if the platform needs it. Keep every command small.`,
             `- If a deploy command fails, read the error and try the correct fix once; do not loop forever.`,
             `- At the very end, print the final live URL on its own line prefixed with "LIVE URL: ".`,

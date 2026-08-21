@@ -30,6 +30,7 @@ export default function Home() {
   const [isReviewing, setIsReviewing] = useState(false);
   const [isStopped, setIsStopped] = useState(false);
   const [isDeploying, setIsDeploying] = useState(false);
+  const [projectName, setProjectName] = useState('');
 
   // Live Logs for the current session
   const [liveLogs, setLiveLogs] = useState('');
@@ -324,7 +325,7 @@ export default function Home() {
       const res = await fetch('/api/agent/deploy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: currentSessionId }),
+        body: JSON.stringify({ sessionId: currentSessionId, projectName }),
         signal: abortControllersRef.current[currentSessionId].signal,
       });
 
@@ -578,6 +579,14 @@ export default function Home() {
                     >
                       📂 Lihat File
                     </button>
+                    <input
+                      type="text"
+                      value={projectName}
+                      onChange={(e) => setProjectName(e.target.value)}
+                      placeholder="nama-web (opsional)"
+                      title="Nama project di Vercel → jadi nama-web.vercel.app. Kosongkan untuk otomatis."
+                      style={{ background: 'var(--input-bg)', color: 'inherit', border: '1px solid var(--surface-border)', padding: '0.5rem 0.6rem', borderRadius: '6px', fontSize: '0.85rem', width: '160px' }}
+                    />
                     <button
                       onClick={handleDeploy}
                       disabled={isDeploying}
