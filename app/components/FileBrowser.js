@@ -21,7 +21,7 @@ function fileIcon(entry) {
   return map[ext] || '📄';
 }
 
-export default function FileBrowser({ sessionId, onClose }) {
+export default function FileBrowser({ sessionId, onClose, apiBase = '/api/agent/files' }) {
   const [path, setPath] = useState('');
   const [entries, setEntries] = useState([]);
   const [selectedFile, setSelectedFile] = useState(null); // { path, content, size, binary, tooLarge }
@@ -34,7 +34,7 @@ export default function FileBrowser({ sessionId, onClose }) {
   const fetchDir = useCallback(async (dirPath, { silent = false } = {}) => {
     if (!silent) { setLoading(true); setError(''); }
     try {
-      const res = await fetch(`/api/agent/files?sessionId=${sessionId}&path=${encodeURIComponent(dirPath)}`);
+      const res = await fetch(`${apiBase}?sessionId=${sessionId}&path=${encodeURIComponent(dirPath)}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Gagal memuat folder');
       setEntries(data.entries || []);
@@ -44,7 +44,7 @@ export default function FileBrowser({ sessionId, onClose }) {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [sessionId]);
+  }, [sessionId, apiBase]);
 
   const loadDir = useCallback(async (dirPath) => {
     setSelectedFile(null);
@@ -54,7 +54,7 @@ export default function FileBrowser({ sessionId, onClose }) {
   const openFile = useCallback(async (filePath, { silent = false } = {}) => {
     if (!silent) { setLoading(true); setError(''); }
     try {
-      const res = await fetch(`/api/agent/files?sessionId=${sessionId}&mode=read&path=${encodeURIComponent(filePath)}`);
+      const res = await fetch(`${apiBase}?sessionId=${sessionId}&mode=read&path=${encodeURIComponent(filePath)}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Gagal membuka file');
       setSelectedFile(data);
@@ -63,7 +63,7 @@ export default function FileBrowser({ sessionId, onClose }) {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [sessionId]);
+  }, [sessionId, apiBase]);
 
   useEffect(() => {
     loadDir('');

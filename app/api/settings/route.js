@@ -28,9 +28,10 @@ export async function GET() {
 
 export async function POST(request) {
   try {
-    const { baseUrl, apiKey, modelName, vercelToken, netlifyToken } = await request.json();
+    const { baseUrl, apiKey, modelName, imageModelName, vercelToken, netlifyToken } = await request.json();
 
     const data = { baseUrl, apiKey, modelName };
+    if (imageModelName !== undefined) data.imageModelName = imageModelName;
     // Only overwrite deploy tokens when provided, so saving other settings
     // doesn't wipe previously stored credentials.
     if (vercelToken !== undefined) data.vercelToken = vercelToken;

@@ -38,6 +38,18 @@ export default function SettingsModal({ settings, setSettings, onSave, onCancel 
           <small style={{ display: 'block', marginTop: '0.5rem', opacity: 0.6 }}>Masukkan nama model dari OpenRouter</small>
         </div>
 
+        <div style={{ marginBottom: '1.5rem' }}>
+          <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Model Gambar (Generate)</label>
+          <input
+            type="text"
+            placeholder="e.g. gpt-image-1"
+            style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', background: 'var(--input-bg)', border: '1px solid var(--surface-border)', color: 'white' }}
+            value={settings.imageModelName || ''}
+            onChange={e => setSettings({ ...settings, imageModelName: e.target.value })}
+          />
+          <small style={{ display: 'block', marginTop: '0.5rem', opacity: 0.6 }}>Model untuk fitur "Generate Gambar" di mode chat</small>
+        </div>
+
         <div style={{ borderTop: '1px solid var(--surface-border)', margin: '0.5rem 0 1rem', paddingTop: '1rem' }}>
           <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.75rem', opacity: 0.85 }}>🚀 Kredensial Deploy (opsional)</div>
 

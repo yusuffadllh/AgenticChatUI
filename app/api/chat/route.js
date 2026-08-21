@@ -2,13 +2,44 @@ import { prisma } from '@/lib/prisma';
 import { NextResponse } from 'next/server';
 import { fetchChatWithRetry } from '@/lib/context';
 
+// Turn a stored message (with optional attachments) into an OpenAI-compatible
+// message. When attachments exist we emit content-parts: text + image_url for
+// images, and inline text for readable files.
+function toGatewayMessage(msg) {
+  const role = msg.role === 'user' ? 'user' : 'assistant';
+  let attachments = [];
+  try {
+    attachments = Array.isArray(msg.attachments)
+      ? msg.attachments
+      : (msg.attachments ? JSON.parse(msg.attachments) : []);
+  } catch { attachments = []; }
+
+  if (!attachments || attachments.length === 0) {
+    return { role, content: msg.content };
+  }
+
+  const parts = [];
+  if (msg.content) parts.push({ type: 'text', text: msg.content });
+
+  for (const att of attachments) {
+    if (att.type === 'image' && att.dataUrl) {
+      parts.push({ type: 'image_url', image_url: { url: att.dataUrl } });
+    } else if (att.textPreview) {
+      parts.push({ type: 'text', text: `\n\n[File: ${att.name}]\n\`\`\`\n${att.textPreview}\n\`\`\`` });
+    } else {
+      parts.push({ type: 'text', text: `\n\n[File terlampir: ${att.name} (${att.mime || 'unknown'})]` });
+    }
+  }
+  return { role, content: parts };
+}
+
 export async function POST(request) {
   try {
-    console.log("Parsing request body...");
-    const { content, sessionId } = await request.json();
-    console.log("Request body parsed successfully.");
+    const { content, sessionId, attachments } = await request.json();
 
-    if (!content) {
+    // Allow attachment-only messages (e.g. "analyze this image" without text).
+    const hasAttachments = Array.isArray(attachments) && attachments.length > 0;
+    if (!content && !hasAttachments) {
       return NextResponse.json({ error: 'Message content is required' }, { status: 400 });
     }
 
@@ -30,12 +61,13 @@ export async function POST(request) {
       });
     }
 
-    // Save user message
+    // Save user message (with attachments metadata).
     const userMessage = await prisma.message.create({
       data: {
         sessionId: session.id,
         role: 'user',
-        content,
+        content: content || '',
+        attachments: hasAttachments ? attachments : undefined,
       }
     });
 
@@ -46,10 +78,7 @@ export async function POST(request) {
       take: 10
     });
 
-    const openRouterMessages = history.map(msg => ({
-      role: msg.role === 'user' ? 'user' : 'assistant',
-      content: msg.content
-    }));
+    const openRouterMessages = history.map(toGatewayMessage);
 
     // Call gateway, retrying on transient 429/5xx ("busy").
     const response = await fetchChatWithRetry(`${settings.baseUrl}/chat/completions`, {

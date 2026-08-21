@@ -14,6 +14,9 @@ model Settings {
   apiKey    String @default("")
   modelName String @default("google/gemini-2.5-pro")
 
+  // Model used by the chat image-generation endpoint (/api/chat/image).
+  imageModelName String @default("gpt-image-1")
+
   // Deploy credentials — injected as env vars into the agent so it can deploy
   // the project it builds. Empty means that platform is unavailable.
   vercelToken  String @default("")
@@ -44,5 +47,8 @@ model Message {
   session   Session  @relation(fields: [sessionId], references: [id])
   role      String   // user, planner, executor
   content   String
+  // JSON array of attachments: [{ type: 'image'|'file', name, path, mime, url? }].
+  // SQLite has no JSON type; Prisma maps Json to TEXT.
+  attachments Json?
   createdAt DateTime @default(now())
 }
