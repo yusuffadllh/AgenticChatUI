@@ -132,7 +132,12 @@ export async function GET(request) {
           messages: {
             take: 1,
             orderBy: { createdAt: 'asc' }
-          }
+          },
+          // Agent sessions need task status so the sidebar can show progress
+          // (how many tasks are done vs pending) for each project.
+          ...(type === 'agent'
+            ? { tasks: { select: { id: true, status: true } } }
+            : {}),
         }
       });
       return NextResponse.json({ sessions });

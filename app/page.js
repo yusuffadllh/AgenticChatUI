@@ -136,6 +136,7 @@ export default function Home() {
           }
           return currentView;
         });
+        fetchSessions(); // keep sidebar project progress in sync
       } else {
         // Stream ended without a 'done' event (server maxDuration cut it, or the
         // connection dropped). Re-fetch task state from the DB so the loop can
@@ -189,6 +190,7 @@ export default function Home() {
       const data = await res.json();
       if (res.ok && data.tasks) {
         setTasks(data.tasks);
+        fetchSessions(); // keep sidebar project progress in sync
         if (data.newTasksAdded) {
           setLoopCount(prev => prev + 1);
         } else {
@@ -241,12 +243,16 @@ export default function Home() {
   const handleSelectSession = async (id) => {
     setSessionId(id);
     setLiveLogs(''); // Reset logs for the new view
-    
+    // Reset the loop counter so a resumed project can loop again from scratch.
+    setLoopCount(0);
+
     // Check if the new session is currently executing in background
     if (executingSessions[id]) {
       setIsStopped(false);
       setLiveLogs('Sedang berjalan di latar belakang... (Log live mungkin terlewat sebagian)\n');
     } else {
+      // Pause by default when opening a project; the user explicitly clicks
+      // "Lanjutkan" to resume the loop for unfinished tasks.
       setIsStopped(true);
     }
 
@@ -268,6 +274,16 @@ export default function Home() {
       console.error(e);
     }
   };
+
+  // Resume the loop for the currently open project: clear stop + reset the loop
+  // counter so pending/incomplete tasks run again (and review can add more).
+  const handleContinueProject = () => {
+    setLoopCount(0);
+    setIsStopped(false);
+  };
+
+  const pendingCount = tasks.filter(t => t.status === 'PENDING' || t.status === 'RUNNING').length;
+  const allTasksDone = tasks.length > 0 && pendingCount === 0;
 
   const handleDeleteSession = async (id) => {
     if (abortControllersRef.current[id]) {
@@ -441,9 +457,14 @@ export default function Home() {
                         ⏹ Stop
                       </button>
                     )}
-                    {isStopped && (
-                      <button onClick={handleResume} style={{ background: '#4CAF50', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '6px', cursor: 'pointer' }}>
-                        ▶ Resume
+                    {isStopped && pendingCount > 0 && (
+                      <button onClick={handleContinueProject} style={{ background: '#4CAF50', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '6px', cursor: 'pointer' }}>
+                        ▶ Lanjutkan Task ({pendingCount} tersisa)
+                      </button>
+                    )}
+                    {isStopped && allTasksDone && (
+                      <button onClick={handleContinueProject} style={{ background: '#4CAF50', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '6px', cursor: 'pointer' }} title="Jalankan evaluasi ulang untuk menambah task lanjutan">
+                        🔁 Lanjutkan Looping
                       </button>
                     )}
                     <button onClick={exportAsZip} style={{ background: 'var(--surface-border)', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '6px', cursor: 'pointer' }}>
