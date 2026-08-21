@@ -60,6 +60,7 @@ export async function POST(request) {
       `- The working directory may be EMPTY at the start — that is expected and normal. Do NOT go looking through the filesystem for existing files, and NEVER inspect, list, cd into, or read hidden/system folders (anything starting with a dot like .opencode-home, or node_modules). Just start creating the files this task needs.`,
       `- Do the task in AT MOST a few steps. If this is a planning/analysis/design task, do NOT browse the filesystem at all — just write your plan/output to a Markdown file (e.g. PLAN.md or an appropriately named .md file) and finish.`,
       `- Actually create and modify real files and run the commands needed to COMPLETE this task now. Do not merely describe or propose.`,
+      `- KEEP EACH FILE-WRITE SMALL. The tool call fails ("exit code 1" / JSON parse error) when a single write payload is too large. Write each file in small pieces: create the file with a short first chunk, then append the rest with several follow-up edits/appends. Prefer many small writes over one giant write. Never emit a single write bigger than ~150 lines.`,
       `- Work only inside the current directory and only with files relevant to the goal.`,
       `- When the task is fully done, end IMMEDIATELY with a short summary of the concrete files you created/changed. Do not keep exploring after the deliverable exists.`,
     ]
@@ -143,6 +144,10 @@ export async function POST(request) {
 
           const formattedOutput = `${header}\n\n**OpenCode Output:**\n\`\`\`text\n${truncated || '(tidak ada output)'}\n\`\`\``;
 
+          // Only mark COMPLETED on a clean exit. A non-zero exit means the run
+          // failed (e.g. a too-large tool payload) — keep the task COMPLETED for
+          // history but record the failure so the reviewer can add a recovery
+          // task instead of the loop assuming success.
           await prisma.task.updateMany({
             where: { id: taskId },
             data: { status: 'COMPLETED', result: formattedOutput },

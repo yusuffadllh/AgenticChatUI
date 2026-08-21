@@ -24,8 +24,14 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
     }
 
-    // Format previous tasks for context
-    const taskContext = session.tasks.map((t, i) => `Task ${i+1}: ${t.description}\nResult: ${t.result || 'No output'}`).join('\n\n');
+    // Format previous tasks for context. Cap each result so a long log can't
+    // bloat the review prompt into a too-large payload the gateway rejects.
+    const taskContext = session.tasks
+      .map((t, i) => {
+        const res = (t.result || 'No output').slice(0, 600);
+        return `Task ${i + 1} [${t.status}]: ${t.description}\nResult: ${res}`;
+      })
+      .join('\n\n');
 
     const systemPrompt = `You are the Reviewer Agent in an autonomous AI loop.
 The user's original goal is: "${session.goal}"
