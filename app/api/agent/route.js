@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { NextResponse } from 'next/server';
-import { cleanGoalInput, buildBudgetedPrompt } from '@/lib/context';
+import { cleanGoalInput, buildBudgetedPrompt, fetchChatWithRetry } from '@/lib/context';
 
 export async function POST(request) {
   try {
@@ -60,8 +60,8 @@ export async function POST(request) {
 
     const systemPrompt = `You are an AI planner. The user will give you a goal. Break down the goal into 3-5 high level tasks. You MUST respond with ONLY a valid JSON array of objects. Format: [{"description": "task 1"}, {"description": "task 2"}]`;
 
-    // Call OpenRouter API for Planner
-    const response = await fetch(`${settings.baseUrl}/chat/completions`, {
+    // Call gateway for Planner, retrying on transient 429/5xx ("busy").
+    const response = await fetchChatWithRetry(`${settings.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${settings.apiKey}`,

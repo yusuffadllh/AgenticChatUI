@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { NextResponse } from 'next/server';
-import { buildBudgetedPrompt } from '@/lib/context';
+import { buildBudgetedPrompt, fetchChatWithRetry } from '@/lib/context';
 
 export async function POST(request) {
   try {
@@ -57,7 +57,7 @@ The user wants continuous, never-ending improvements. If the current work seems 
 ALWAYS generate 1 to 3 NEW tasks to continuously improve the project.
 Respond ONLY with a valid JSON array of objects. Format: [{"description": "Refactor X to improve Y"}, {"description": "Add Z for security"}]`;
 
-    const response = await fetch(`${settings.baseUrl}/chat/completions`, {
+    const response = await fetchChatWithRetry(`${settings.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${settings.apiKey}`,

@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { NextResponse } from 'next/server';
+import { fetchChatWithRetry } from '@/lib/context';
 
 export async function POST(request) {
   try {
@@ -50,8 +51,8 @@ export async function POST(request) {
       content: msg.content
     }));
 
-    // Call OpenRouter API
-    const response = await fetch(`${settings.baseUrl}/chat/completions`, {
+    // Call gateway, retrying on transient 429/5xx ("busy").
+    const response = await fetchChatWithRetry(`${settings.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${settings.apiKey}`,
