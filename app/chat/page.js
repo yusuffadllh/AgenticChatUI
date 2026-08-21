@@ -171,6 +171,40 @@ export default function ChatPage() {
     }
   };
 
+  // Edit/modify an uploaded image using a prompt (image-to-image).
+  const handleEditImage = async (att) => {
+    if (!sessionId) {
+      setMessages(prev => [...prev, { role: 'assistant', content: '❌ Kirim gambarnya dulu ke sesi ini sebelum diedit.' }]);
+      return;
+    }
+    const prompt = window.prompt('Mau diedit jadi seperti apa? Deskripsikan perubahannya:');
+    if (!prompt || !prompt.trim()) return;
+
+    setMessages(prev => [...prev, { role: 'user', content: `✏️ Edit gambar (${att.name}): ${prompt}` }]);
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/chat/image/edit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, sessionId, sourcePath: att.path }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMessages(prev => [...prev, { role: 'assistant', content: `❌ ${data.error || 'Gagal edit gambar'}` }]);
+        return;
+      }
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: data.assistantMessage.content,
+        attachments: parseAttachments(data.assistantMessage.attachments),
+      }]);
+    } catch (e) {
+      setMessages(prev => [...prev, { role: 'assistant', content: 'Gagal menghubungi server.' }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleDeleteSession = async (id) => {
     if (confirm("Hapus obrolan ini?")) {
       await fetch(`/api/chat?sessionId=${id}`, { method: 'DELETE' });
@@ -291,6 +325,21 @@ export default function ChatPage() {
                         alt={att.name}
                         style={{ maxWidth: '260px', maxHeight: '260px', borderRadius: '8px', border: '1px solid var(--surface-border)' }}
                       />
+                    ) : att.path && sessionId ? (
+                      <a
+                        key={i}
+                        href={`/api/chat/download?sessionId=${sessionId}&path=${encodeURIComponent(att.path)}`}
+                        download
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
+                          background: 'var(--input-bg)', border: '1px solid var(--surface-border)',
+                          padding: '0.3rem 0.6rem', borderRadius: '6px', fontSize: '0.8rem',
+                          color: 'inherit', textDecoration: 'none'
+                        }}
+                        title="Klik untuk download"
+                      >
+                        {att.created ? '📄' : '📎'} {att.name} <span style={{ opacity: 0.6 }}>⬇</span>
+                      </a>
                     ) : (
                       <span key={i} style={{
                         display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
@@ -344,6 +393,14 @@ export default function ChatPage() {
                     ? <img src={att.dataUrl} alt={att.name} style={{ width: '28px', height: '28px', objectFit: 'cover', borderRadius: '4px' }} />
                     : <span>📎</span>}
                   <span style={{ maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{att.name}</span>
+                  {att.type === 'image' && (
+                    <button
+                      onClick={() => handleEditImage(att)}
+                      disabled={isLoading}
+                      style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}
+                      title="Edit / modifikasi gambar ini dengan prompt"
+                    >✏️</button>
+                  )}
                   <button
                     onClick={() => removePendingAttachment(i)}
                     style={{ background: 'none', border: 'none', color: '#ef5350', cursor: 'pointer', fontSize: '1rem', lineHeight: 1 }}

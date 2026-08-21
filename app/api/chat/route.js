@@ -1,6 +1,60 @@
 import { prisma } from '@/lib/prisma';
 import { NextResponse } from 'next/server';
 import { fetchChatWithRetry } from '@/lib/context';
+import fs from 'fs/promises';
+import path from 'path';
+
+// Instructs the model that it can create real files by emitting a fenced block.
+// The server parses these blocks, writes them to chat-workspaces/<id>, and
+// exposes them in "File Chat" + as download links.
+const SYSTEM_PROMPT = `Kamu adalah asisten AI serba bisa (mirip ChatGPT/Claude) yang bisa membaca file & gambar, serta MEMBUAT file baru.
+
+Jika pengguna meminta dibuatkan file (kode, teks, konfigurasi, dsb), tulis file menggunakan format PERSIS berikut agar sistem menyimpannya otomatis:
+
+<<<FILE: nama-file.ext>>>
+(isi lengkap file di sini)
+<<<END>>>
+
+Aturan:
+- Gunakan path relatif; boleh subfolder, mis. <<<FILE: src/index.js>>>.
+- Boleh membuat beberapa file dalam satu balasan (ulang blok di atas).
+- Tetap beri penjelasan singkat di luar blok bila perlu.
+- Jangan gunakan format ini kalau pengguna tidak minta dibuatkan file.
+Jawab dalam bahasa yang sama dengan pengguna.`;
+
+// Extract <<<FILE: name>>> ... <<<END>>> blocks from an assistant reply.
+function parseFileBlocks(text) {
+  const blocks = [];
+  const re = /<<<FILE:\s*(.+?)\s*>>>\r?\n([\s\S]*?)\r?\n?<<<END>>>/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    blocks.push({ name: m[1].trim(), content: m[2] });
+  }
+  return blocks;
+}
+
+// Keep writes inside chat-workspaces/<sessionId>; block path traversal.
+async function writeChatFiles(sessionId, blocks) {
+  const base = path.join(process.cwd(), 'chat-workspaces', sessionId, 'files');
+  const saved = [];
+  for (const b of blocks) {
+    const rel = b.name.replace(/^[/\\]+/, '');
+    const target = path.resolve(base, rel);
+    if (target !== base && !target.startsWith(base + path.sep)) continue;
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(target, b.content, 'utf8');
+    const stat = await fs.stat(target);
+    saved.push({
+      type: 'file',
+      name: path.basename(rel),
+      path: `files/${rel.split(path.sep).join('/')}`,
+      mime: 'text/plain',
+      size: stat.size,
+      created: true,
+    });
+  }
+  return saved;
+}
 
 // Turn a stored message (with optional attachments) into an OpenAI-compatible
 // message. When attachments exist we emit content-parts: text + image_url for
@@ -78,7 +132,10 @@ export async function POST(request) {
       take: 10
     });
 
-    const openRouterMessages = history.map(toGatewayMessage);
+    const openRouterMessages = [
+      { role: 'system', content: SYSTEM_PROMPT },
+      ...history.map(toGatewayMessage),
+    ];
 
     // Call gateway, retrying on transient 429/5xx ("busy").
     const response = await fetchChatWithRetry(`${settings.baseUrl}/chat/completions`, {
@@ -119,9 +176,21 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Invalid JSON from AI provider', details: rawText }, { status: 502 });
     }
 
-    const assistantContent = data.choices && data.choices[0] && data.choices[0].message 
+    let assistantContent = data.choices && data.choices[0] && data.choices[0].message 
       ? data.choices[0].message.content 
       : JSON.stringify(data);
+
+    // If the model emitted file blocks, write them to disk and expose as
+    // downloadable attachments. Replace the raw blocks with a short note.
+    let fileAttachments = [];
+    const blocks = parseFileBlocks(assistantContent);
+    if (blocks.length > 0) {
+      fileAttachments = await writeChatFiles(session.id, blocks);
+      assistantContent = assistantContent.replace(
+        /<<<FILE:\s*(.+?)\s*>>>\r?\n[\s\S]*?\r?\n?<<<END>>>/g,
+        (_match, name) => `📄 File dibuat: **${name.trim()}**`
+      );
+    }
 
     // Save assistant message
     const assistantMessage = await prisma.message.create({
@@ -129,6 +198,7 @@ export async function POST(request) {
         sessionId: session.id,
         role: 'assistant',
         content: assistantContent,
+        attachments: fileAttachments.length > 0 ? fileAttachments : undefined,
       }
     });
 
