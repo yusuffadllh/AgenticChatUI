@@ -179,19 +179,19 @@ export async function POST(request) {
             ? rawOutput.slice(-20000) + '\n... (log dipotong)'
             : rawOutput;
 
-          const header = exitCode === 0
+          const success = exitCode === 0;
+          const header = success
             ? `✅ OpenCode selesai (exit ${exitCode}).`
-            : `⚠️ OpenCode selesai dengan exit code ${exitCode}.`;
+            : `❌ Task GAGAL — OpenCode keluar dengan exit code ${exitCode}. Silakan mulai ulang task ini.`;
 
           const formattedOutput = `${header}\n\n**OpenCode Output:**\n\`\`\`text\n${truncated || '(tidak ada output)'}\n\`\`\``;
 
-          // Only mark COMPLETED on a clean exit. A non-zero exit means the run
-          // failed (e.g. a too-large tool payload) — keep the task COMPLETED for
-          // history but record the failure so the reviewer can add a recovery
-          // task instead of the loop assuming success.
+          // A non-zero exit means the run failed (e.g. a too-large tool payload).
+          // Mark it FAILED so the UI shows a clear failure the user can restart,
+          // instead of a misleading "completed".
           await prisma.task.updateMany({
             where: { id: taskId },
-            data: { status: 'COMPLETED', result: formattedOutput },
+            data: { status: success ? 'COMPLETED' : 'FAILED', result: formattedOutput },
           });
 
           try {

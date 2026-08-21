@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import SettingsModal from './components/SettingsModal';
+import FileBrowser from './components/FileBrowser';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import JSZip from 'jszip';
@@ -12,6 +13,7 @@ import { cleanGoalInput } from '../lib/context';
 export default function Home() {
   const [settings, setSettings] = useState({ baseUrl: '', apiKey: '', modelName: '', vercelToken: '', netlifyToken: '' });
   const [showSettings, setShowSettings] = useState(false);
+  const [showFiles, setShowFiles] = useState(false);
   const [goal, setGoal] = useState('');
   const [tasks, setTasks] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -287,6 +289,22 @@ export default function Home() {
     setIsStopped(false);
   };
 
+  // Reset a FAILED task back to PENDING so the loop picks it up and runs it again.
+  const handleRetryTask = async (taskId) => {
+    try {
+      await fetch('/api/agent/retry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId }),
+      });
+      setTasks(prev => prev.map(t => (t.id === taskId ? { ...t, status: 'PENDING', result: null } : t)));
+      setLoopCount(0);
+      setIsStopped(false);
+    } catch (e) {
+      console.error('Gagal retry task', e);
+    }
+  };
+
   const handleDeploy = async () => {
     if (!sessionId || isDeploying) return;
     if (!settings.vercelToken && !settings.netlifyToken) {
@@ -554,6 +572,13 @@ export default function Home() {
                       </button>
                     )}
                     <button
+                      onClick={() => setShowFiles(true)}
+                      title="Lihat isi folder project ini"
+                      style={{ background: '#2196f3', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '6px', cursor: 'pointer' }}
+                    >
+                      📂 Lihat File
+                    </button>
+                    <button
                       onClick={handleDeploy}
                       disabled={isDeploying}
                       title="Publish project ini online (Vercel/Netlify)"
@@ -613,7 +638,7 @@ export default function Home() {
                           fontSize: '0.7rem',
                           flexShrink: 0
                         }}>
-                          {task.status === 'COMPLETED' ? '✓' : (task.status === 'RUNNING' ? '⚙' : idx + 1)}
+                          {task.status === 'COMPLETED' ? '✓' : (task.status === 'FAILED' ? '✗' : (task.status === 'RUNNING' ? '⚙' : idx + 1))}
                         </div>
                         <div style={{ flex: 1, fontWeight: task.status === 'RUNNING' ? 'bold' : 'normal', fontSize: '0.85rem', overflowWrap: 'break-word', wordBreak: 'break-word' }}>
                           {task.description}
@@ -623,7 +648,7 @@ export default function Home() {
                           padding: '0.15rem 0.4rem', 
                           borderRadius: '4px',
                           flexShrink: 0,
-                          background: task.status === 'PENDING' ? 'rgba(255,255,255,0.1)' : (task.status === 'RUNNING' ? '#ff9800' : 'var(--accent)'),
+                          background: task.status === 'PENDING' ? 'rgba(255,255,255,0.1)' : (task.status === 'RUNNING' ? '#ff9800' : (task.status === 'FAILED' ? '#f44336' : 'var(--accent)')),
                           color: task.status === 'RUNNING' ? '#000' : '#fff'
                         }}>
                           {task.status}
@@ -668,10 +693,20 @@ export default function Home() {
                           </div>
                         )}
 
-                        {task.result && task.status === 'COMPLETED' && (
-                          <div className="markdown-content" style={{ fontSize: '0.95rem', lineHeight: '1.6', overflowWrap: 'break-word', wordBreak: 'break-word' }}>
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{task.result}</ReactMarkdown>
-                          </div>
+                        {task.result && (task.status === 'COMPLETED' || task.status === 'FAILED') && (
+                          <>
+                            {task.status === 'FAILED' && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                                <span style={{ fontSize: '0.7rem', padding: '0.15rem 0.5rem', borderRadius: '4px', background: '#f44336', color: '#fff', fontWeight: 'bold' }}>GAGAL</span>
+                                <button onClick={() => handleRetryTask(task.id)} style={{ fontSize: '0.7rem', padding: '0.2rem 0.6rem', borderRadius: '4px', background: '#ff9800', color: '#000', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}>
+                                  🔄 Mulai ulang task
+                                </button>
+                              </div>
+                            )}
+                            <div className="markdown-content" style={{ fontSize: '0.95rem', lineHeight: '1.6', overflowWrap: 'break-word', wordBreak: 'break-word' }}>
+                              <ReactMarkdown remarkPlugins={[remarkGfm]}>{task.result}</ReactMarkdown>
+                            </div>
+                          </>
                         )}
                       </div>
                     ))}
@@ -694,6 +729,10 @@ export default function Home() {
           onSave={saveSettings}
           onCancel={() => setShowSettings(false)}
         />
+      )}
+
+      {showFiles && sessionId && (
+        <FileBrowser sessionId={sessionId} onClose={() => setShowFiles(false)} />
       )}
     </div>
   );

@@ -40,6 +40,7 @@ export default function Sidebar({ setShowSettings, currentMode, sessions = [], o
               const done = tasks.filter(t => t.status === 'COMPLETED').length;
               const running = tasks.some(t => t.status === 'RUNNING');
               const pending = tasks.some(t => t.status === 'PENDING');
+              const failed = tasks.some(t => t.status === 'FAILED');
               const allDone = total > 0 && done === total;
               const pct = total ? Math.round((done / total) * 100) : 0;
 
@@ -49,6 +50,8 @@ export default function Sidebar({ setShowSettings, currentMode, sessions = [], o
                 ? { text: 'Selesai', color: '#81c784', bg: 'rgba(129,199,132,0.15)' }
                 : pending
                 ? { text: 'Belum kelar', color: '#ffb74d', bg: 'rgba(255,183,77,0.15)' }
+                : failed
+                ? { text: 'Ada yang gagal', color: '#ef5350', bg: 'rgba(239,83,80,0.15)' }
                 : { text: 'Baru', color: '#bb86fc', bg: 'rgba(187,134,252,0.15)' };
 
               const isActive = session.id === currentSessionId;
