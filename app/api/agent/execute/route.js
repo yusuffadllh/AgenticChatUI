@@ -63,6 +63,35 @@ export async function POST(request) {
       `- When the task is fully done, end IMMEDIATELY with a short summary of the concrete files you created/changed. Do not keep exploring after the deliverable exists.`,
     ].join('\n');
 
+    // If this task is about deploying/publishing and deploy credentials are
+    // configured, tell the model exactly how to deploy on each platform whose
+    // token is present. Only mention configured platforms so the model doesn't
+    // waste turns on unavailable ones.
+    const wantsDeploy = /deploy|publish|online|go.?live|host|vercel|netlify/i.test(
+      `${currentTask.description} ${session.goal}`
+    );
+    const deployTargets = [];
+    if (settings.vercelToken) {
+      deployTargets.push(
+        `- Vercel: the env var VERCEL_TOKEN is already set. From the project directory run: \`npx --yes vercel deploy --prod --yes --token="$VERCEL_TOKEN"\`. Vercel auto-detects the framework. After it finishes, print the production URL it returns.`
+      );
+    }
+    if (settings.netlifyToken) {
+      deployTargets.push(
+        `- Netlify: the env var NETLIFY_AUTH_TOKEN is already set. Build first if needed, then run: \`npx --yes netlify deploy --prod --dir=<build-output-dir> --auth "$NETLIFY_AUTH_TOKEN"\` (use the correct build output dir, e.g. dist, build, out, or . for static). Print the deploy URL it returns.`
+      );
+    }
+    const deployRules =
+      wantsDeploy && deployTargets.length
+        ? [
+            `DEPLOYMENT INSTRUCTIONS (this task involves publishing the project online):`,
+            `- Deploy the finished project using one of the platforms below. Prefer Vercel for Next.js/frontend apps, Netlify for static sites.`,
+            ...deployTargets,
+            `- Do NOT ask for tokens or logins — they are already provided via environment variables. Never print the token values.`,
+            `- At the very end, clearly print the final live URL on its own line prefixed with "LIVE URL: ".`,
+          ].join('\n')
+        : null;
+
     // Assemble the prompt within a token budget. Rules + current task are
     // essential (never truncated); the overall goal and prior-task context are
     // truncated first if we approach the limit — so the payload starts small
@@ -71,6 +100,7 @@ export async function POST(request) {
       [
         { text: `IMPORTANT RULES ARE BELOW — follow them strictly.`, priority: 10, truncatable: false },
         { text: `Your current task: ${currentTask.description}`, priority: 9, truncatable: false },
+        deployRules ? { text: deployRules, priority: 9, truncatable: false } : null,
         { text: rules, priority: 8, truncatable: false },
         { text: `Overall goal: ${session.goal}`, priority: 5, truncatable: true },
         priorContext ? { text: `Context from earlier tasks:\n${priorContext}`, priority: 1, truncatable: true } : null,

@@ -122,6 +122,23 @@ export async function POST(request) {
       ];
     }
 
+    // Auto-append a deploy task when the goal asks to go online AND at least
+    // one deploy credential is configured. This makes the agent publish the
+    // result by itself instead of only building it locally.
+    const wantsDeploy = /deploy|publish|online|go.?live|hosting|host it|ke internet|terbitkan|luncurkan/i.test(rawGoal || '');
+    const hasDeployCreds = !!(settings.vercelToken || settings.netlifyToken);
+    if (wantsDeploy && hasDeployCreds) {
+      const alreadyHasDeployTask = tasksData.some(
+        (t) => t && t.description && /deploy|publish|luncurkan|terbitkan|online/i.test(t.description)
+      );
+      if (!alreadyHasDeployTask) {
+        const platform = settings.vercelToken ? 'Vercel' : 'Netlify';
+        tasksData.push({
+          description: `Deploy the finished project online using ${platform} and report the live production URL`,
+        });
+      }
+    }
+
     // Save tasks
     const createdTasks = [];
     for (const t of tasksData) {

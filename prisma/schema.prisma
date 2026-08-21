@@ -13,6 +13,11 @@ model Settings {
   baseUrl   String @default("https://openrouter.ai/api/v1")
   apiKey    String @default("")
   modelName String @default("google/gemini-2.5-pro")
+
+  // Deploy credentials — injected as env vars into the agent so it can deploy
+  // the project it builds. Empty means that platform is unavailable.
+  vercelToken  String @default("")
+  netlifyToken String @default("")
 }
 
 model Session {

@@ -10,7 +10,7 @@ import { saveAs } from 'file-saver';
 import { cleanGoalInput } from '../lib/context';
 
 export default function Home() {
-  const [settings, setSettings] = useState({ baseUrl: '', apiKey: '', modelName: '' });
+  const [settings, setSettings] = useState({ baseUrl: '', apiKey: '', modelName: '', vercelToken: '', netlifyToken: '' });
   const [showSettings, setShowSettings] = useState(false);
   const [goal, setGoal] = useState('');
   const [tasks, setTasks] = useState([]);
@@ -27,6 +27,7 @@ export default function Home() {
   const [loopCount, setLoopCount] = useState(0);
   const [isReviewing, setIsReviewing] = useState(false);
   const [isStopped, setIsStopped] = useState(false);
+  const [isDeploying, setIsDeploying] = useState(false);
 
   // Live Logs for the current session
   const [liveLogs, setLiveLogs] = useState('');
@@ -286,6 +287,76 @@ export default function Home() {
     setIsStopped(false);
   };
 
+  const handleDeploy = async () => {
+    if (!sessionId || isDeploying) return;
+    if (!settings.vercelToken && !settings.netlifyToken) {
+      alert('Belum ada kredensial deploy. Isi Vercel/Netlify token dulu di Settings.');
+      setShowSettings(true);
+      return;
+    }
+
+    const currentSessionId = sessionId;
+    setIsDeploying(true);
+    // Pause the auto-loop while deploying.
+    setIsStopped(true);
+    setLiveLogs('🚀 Memulai deploy...\n');
+    abortControllersRef.current[currentSessionId] = new AbortController();
+
+    try {
+      const res = await fetch('/api/agent/deploy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: currentSessionId }),
+        signal: abortControllersRef.current[currentSessionId].signal,
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let isDone = false;
+      let buffer = '';
+
+      while (!isDone) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.type === 'log') {
+                setLiveLogs(prev => prev + data.message + '\n');
+              } else if (data.type === 'done') {
+                if (data.liveUrl) {
+                  setLiveLogs(prev => prev + `\n🌐 Live URL: ${data.liveUrl}\n`);
+                }
+                isDone = true;
+              } else if (data.type === 'error') {
+                setLiveLogs(prev => prev + `❌ ${data.error}: ${data.details || ''}\n`);
+                isDone = true;
+              }
+            } catch (e) {
+              console.error('Parse error on deploy SSE line:', line, e);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      if (e.name !== 'AbortError') {
+        setLiveLogs(prev => prev + `❌ Deploy gagal: ${e.message}\n`);
+      }
+    } finally {
+      setIsDeploying(false);
+      fetchSessions();
+    }
+  };
+
   const pendingCount = tasks.filter(t => t.status === 'PENDING' || t.status === 'RUNNING').length;
   const allTasksDone = tasks.length > 0 && pendingCount === 0;
 
@@ -339,6 +410,17 @@ export default function Home() {
 
   useEffect(() => {
     fetchSessions(true);
+    (async () => {
+      try {
+        const res = await fetch('/api/settings');
+        if (res.ok) {
+          const data = await res.json();
+          if (data) setSettings((prev) => ({ ...prev, ...data }));
+        }
+      } catch (e) {
+        console.error('Gagal memuat settings', e);
+      }
+    })();
   }, []);
 
   useEffect(() => {
@@ -471,6 +553,14 @@ export default function Home() {
                         🔁 Lanjutkan Looping
                       </button>
                     )}
+                    <button
+                      onClick={handleDeploy}
+                      disabled={isDeploying}
+                      title="Publish project ini online (Vercel/Netlify)"
+                      style={{ background: isDeploying ? '#9e9e9e' : '#673ab7', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '6px', cursor: isDeploying ? 'not-allowed' : 'pointer' }}
+                    >
+                      {isDeploying ? '🚀 Deploying...' : '🚀 Deploy'}
+                    </button>
                     <button onClick={exportAsZip} style={{ background: 'var(--surface-border)', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '6px', cursor: 'pointer' }}>
                       💾 Export MD
                     </button>

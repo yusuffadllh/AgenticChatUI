@@ -28,14 +28,20 @@ export async function GET() {
 
 export async function POST(request) {
   try {
-    const { baseUrl, apiKey, modelName } = await request.json();
-    
+    const { baseUrl, apiKey, modelName, vercelToken, netlifyToken } = await request.json();
+
+    const data = { baseUrl, apiKey, modelName };
+    // Only overwrite deploy tokens when provided, so saving other settings
+    // doesn't wipe previously stored credentials.
+    if (vercelToken !== undefined) data.vercelToken = vercelToken;
+    if (netlifyToken !== undefined) data.netlifyToken = netlifyToken;
+
     const settings = await prisma.settings.upsert({
       where: { id: 1 },
-      update: { baseUrl, apiKey, modelName },
-      create: { id: 1, baseUrl, apiKey, modelName },
+      update: data,
+      create: { id: 1, baseUrl, apiKey, modelName, vercelToken: vercelToken || '', netlifyToken: netlifyToken || '' },
     });
-    
+
     return NextResponse.json(settings);
   } catch (error) {
     console.error("POST Settings Error:", error);
