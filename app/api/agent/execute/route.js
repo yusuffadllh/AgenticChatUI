@@ -5,8 +5,8 @@ import path from 'path';
 import { runOpencode } from '@/lib/opencode';
 
 export const dynamic = 'force-dynamic';
-// Executor may run long-lived agent processes.
-export const maxDuration = 300;
+// Executor runs long-lived agent processes; allow up to ~30 min.
+export const maxDuration = 1800;
 
 export async function POST(request) {
   try {
@@ -42,10 +42,13 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Task not found in session' }, { status: 404 });
     }
 
-    // Build a rich prompt: overall goal + prior task results for continuity.
+    // Build a compact prompt: overall goal + only the last 2 completed tasks
+    // for continuity. Injecting every prior result bloats the prompt (and can
+    // stall the gateway), so keep it short.
     const priorContext = session.tasks
-      .filter((t) => t.id !== taskId && t.result)
-      .map((t, i) => `Previous task ${i + 1}: ${t.description}\nResult summary: ${(t.result || '').slice(0, 800)}`)
+      .filter((t) => t.id !== taskId && t.status === 'COMPLETED' && t.result)
+      .slice(-2)
+      .map((t, i) => `Previous task ${i + 1}: ${t.description}\nResult summary: ${(t.result || '').slice(0, 300)}`)
       .join('\n\n');
 
     const prompt = [

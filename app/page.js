@@ -136,10 +136,24 @@ export default function Home() {
           }
           return currentView;
         });
-        
-        // Also trigger a background check to continue if we aren't viewing it?
-        // For true background concurrency, we would need a global task manager.
-        // For now, it finishes the CURRENT task in the background safely.
+      } else {
+        // Stream ended without a 'done' event (server maxDuration cut it, or the
+        // connection dropped). Re-fetch task state from the DB so the loop can
+        // continue instead of getting stuck on a RUNNING task forever.
+        try {
+          const check = await fetch(`/api/agent?sessionId=${currentSessionId}`);
+          const checkData = await check.json();
+          if (check.ok && checkData.tasks) {
+            setSessionId(currentView => {
+              if (currentView === currentSessionId) {
+                setTasks(checkData.tasks);
+              }
+              return currentView;
+            });
+          }
+        } catch (e) {
+          console.error('Fallback task re-fetch failed:', e);
+        }
       }
 
     } catch (err) {
