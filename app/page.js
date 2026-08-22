@@ -25,6 +25,12 @@ export default function Home() {
   const [executingSessions, setExecutingSessions] = useState({});
   const abortControllersRef = useRef({});
 
+  // Auto-retry budget for FAILED tasks (e.g. transient gateway errors). When
+  // exhausted we pause the loop so the user can fix the gateway, instead of
+  // spinning forever re-failing every task.
+  const MAX_AUTO_RETRIES = 3;
+  const autoRetriesRef = useRef(0);
+
   const [maxLoops, setMaxLoops] = useState(3);
   const [loopCount, setLoopCount] = useState(0);
   const [isReviewing, setIsReviewing] = useState(false);
@@ -65,7 +71,8 @@ export default function Home() {
   const executeNextTask = async () => {
     if (!sessionId || !tasks.length || isStopped || executingSessions[sessionId]) return;
     
-    const nextTask = tasks.find(t => t.status === 'PENDING' || t.status === 'RUNNING');
+    // Also pick up FAILED tasks so "mulai lagi" actually retries them.
+    const nextTask = tasks.find(t => t.status === 'PENDING' || t.status === 'RUNNING' || t.status === 'FAILED');
     if (!nextTask) return;
 
     const currentSessionId = sessionId;
@@ -299,11 +306,35 @@ export default function Home() {
         body: JSON.stringify({ taskId }),
       });
       setTasks(prev => prev.map(t => (t.id === taskId ? { ...t, status: 'PENDING', result: null } : t)));
+      autoRetriesRef.current = 0;
       setLoopCount(0);
       setIsStopped(false);
     } catch (e) {
       console.error('Gagal retry task', e);
     }
+  };
+
+  // Reset ALL failed tasks and resume the loop (used after fixing the gateway).
+  const handleRetryAllFailed = async () => {
+    const failed = tasks.filter(t => t.status === 'FAILED');
+    if (failed.length === 0) return;
+    try {
+      await Promise.all(
+        failed.map(t =>
+          fetch('/api/agent/retry', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ taskId: t.id }),
+          })
+        )
+      );
+    } catch (e) {
+      console.error('Gagal reset task gagal', e);
+    }
+    setTasks(prev => prev.map(t => (t.status === 'FAILED' ? { ...t, status: 'PENDING', result: null } : t)));
+    autoRetriesRef.current = 0;
+    setLoopCount(0);
+    setIsStopped(false);
   };
 
   const handleDeploy = async () => {
@@ -377,7 +408,9 @@ export default function Home() {
   };
 
   const pendingCount = tasks.filter(t => t.status === 'PENDING' || t.status === 'RUNNING').length;
-  const allTasksDone = tasks.length > 0 && pendingCount === 0;
+  const failedCount = tasks.filter(t => t.status === 'FAILED').length;
+  // "Done" only when nothing is pending AND nothing failed.
+  const allTasksDone = tasks.length > 0 && pendingCount === 0 && failedCount === 0;
 
   const handleDeleteSession = async (id) => {
     if (abortControllersRef.current[id]) {
@@ -446,11 +479,27 @@ export default function Home() {
     if (hasSubmitted && tasks.length > 0 && !isStopped && sessionId) {
       const hasPending = tasks.some(t => t.status === 'PENDING');
       const hasRunning = tasks.some(t => t.status === 'RUNNING');
+      const hasFailed = tasks.some(t => t.status === 'FAILED');
       const isExecuting = executingSessions[sessionId];
 
       if ((hasPending || hasRunning) && !isExecuting && !isReviewing) {
+        // Normal work still queued — reset the retry budget and run it.
+        autoRetriesRef.current = 0;
         executeNextTask();
-      } else if (!hasPending && !hasRunning && !isExecuting && !isReviewing) {
+      } else if (hasFailed && !isExecuting && !isReviewing) {
+        // Only failed tasks left: auto-retry a limited number of times so a
+        // transient gateway error recovers on its own, but a persistent outage
+        // pauses the loop instead of failing forever.
+        if (autoRetriesRef.current < MAX_AUTO_RETRIES) {
+          autoRetriesRef.current += 1;
+          setLiveLogs(prev => prev + `↻ Mencoba ulang task yang gagal (percobaan ${autoRetriesRef.current}/${MAX_AUTO_RETRIES})...\n`);
+          executeNextTask();
+        } else {
+          setLiveLogs(prev => prev + `⏸ Task masih gagal setelah ${MAX_AUTO_RETRIES}x. Loop dihentikan — cek koneksi gateway (pakai Ping AI di Settings), lalu klik "Coba Lagi".\n`);
+          setIsStopped(true);
+        }
+      } else if (!hasPending && !hasRunning && !hasFailed && !isExecuting && !isReviewing) {
+        autoRetriesRef.current = 0;
         const limit = parseInt(maxLoops, 10);
         if (isNaN(limit) || loopCount < limit) {
           executeReview();
@@ -562,7 +611,12 @@ export default function Home() {
                         ⏹ Stop
                       </button>
                     )}
-                    {isStopped && pendingCount > 0 && (
+                    {isStopped && failedCount > 0 && (
+                      <button onClick={handleRetryAllFailed} style={{ background: '#ff9800', color: '#000', border: 'none', padding: '0.5rem 1rem', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }} title="Reset task gagal ke antrean dan jalankan loop lagi">
+                        ↻ Coba Lagi ({failedCount} gagal)
+                      </button>
+                    )}
+                    {isStopped && pendingCount > 0 && failedCount === 0 && (
                       <button onClick={handleContinueProject} style={{ background: '#4CAF50', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '6px', cursor: 'pointer' }}>
                         ▶ Lanjutkan Task ({pendingCount} tersisa)
                       </button>
