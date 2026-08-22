@@ -2,6 +2,41 @@ import { prisma } from '@/lib/prisma';
 import { NextResponse } from 'next/server';
 import { buildBudgetedPrompt, fetchChatWithRetry } from '@/lib/context';
 
+// Turn the model's reply into a task array, tolerating replies where the JSON
+// is wrapped in prose (e.g. "Every single... [ {..} ]"). Returns [] if none.
+function parseReviewTasks(text) {
+  if (!text) return [];
+  const tryParse = (s) => {
+    try {
+      const v = JSON.parse(s);
+      if (Array.isArray(v)) return v;
+      if (v && Array.isArray(v.tasks)) return v.tasks;
+    } catch { /* ignore */ }
+    return null;
+  };
+
+  // 1. Whole reply is valid JSON.
+  let out = tryParse(text.trim());
+  if (out) return out;
+
+  // 2. Extract the first [...] block and parse that.
+  const first = text.indexOf('[');
+  const last = text.lastIndexOf(']');
+  if (first !== -1 && last > first) {
+    out = tryParse(text.slice(first, last + 1));
+    if (out) return out;
+  }
+
+  // 3. Last resort: collect any {"description": "..."} objects in the text.
+  const objs = [];
+  const re = /\{\s*"description"\s*:\s*"((?:[^"\\]|\\.)*)"\s*\}/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    objs.push({ description: m[1].replace(/\\"/g, '"') });
+  }
+  return objs;
+}
+
 export async function POST(request) {
   try {
     const { sessionId } = await request.json();
@@ -95,16 +130,7 @@ Respond ONLY with a valid JSON array of objects. Format: [{"description": "Refac
     let assistantContent = data.choices?.[0]?.message?.content || "[]";
     assistantContent = assistantContent.replace(/```json/g, '').replace(/```/g, '').trim();
 
-    let newTasksData = [];
-    try {
-      newTasksData = JSON.parse(assistantContent);
-      if (!Array.isArray(newTasksData) && newTasksData.tasks) {
-        newTasksData = newTasksData.tasks;
-      }
-    } catch (e) {
-      console.error("Failed to parse review tasks", e);
-      newTasksData = [];
-    }
+    const newTasksData = parseReviewTasks(assistantContent);
 
     const createdTasks = [];
     for (const t of newTasksData) {
