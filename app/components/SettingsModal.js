@@ -1,6 +1,37 @@
 'use client';
 
+import { useState } from 'react';
+
 export default function SettingsModal({ settings, setSettings, onSave, onCancel }) {
+  const [pinging, setPinging] = useState(false);
+  const [pingResult, setPingResult] = useState(null); // { ok, msg }
+
+  const handlePing = async () => {
+    setPinging(true);
+    setPingResult(null);
+    try {
+      const res = await fetch('/api/settings/ping', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          baseUrl: settings.baseUrl,
+          apiKey: settings.apiKey,
+          modelName: settings.modelName,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setPingResult({ ok: true, msg: `✅ Terhubung! Model: ${data.model} · ${data.latencyMs}ms` });
+      } else {
+        setPingResult({ ok: false, msg: `❌ ${data.error || 'Gagal terhubung'}` });
+      }
+    } catch (e) {
+      setPingResult({ ok: false, msg: `❌ ${e.message}` });
+    } finally {
+      setPinging(false);
+    }
+  };
+
   return (
     <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
       <div className="glass" style={{ padding: '2rem', borderRadius: '16px', width: '400px', background: 'rgba(20, 22, 32, 0.95)' }}>
@@ -36,6 +67,27 @@ export default function SettingsModal({ settings, setSettings, onSave, onCancel 
             onChange={e => setSettings({...settings, modelName: e.target.value})}
           />
           <small style={{ display: 'block', marginTop: '0.5rem', opacity: 0.6 }}>Masukkan nama model dari OpenRouter</small>
+        </div>
+
+        <div style={{ marginBottom: '1.5rem' }}>
+          <button
+            onClick={handlePing}
+            disabled={pinging}
+            style={{
+              width: '100%', padding: '0.6rem', borderRadius: '8px', cursor: pinging ? 'wait' : 'pointer',
+              background: 'var(--input-bg)', border: '1px solid var(--surface-border)', color: 'white',
+            }}
+          >
+            {pinging ? '📡 Menguji koneksi...' : '📡 Ping AI (tes Base URL + Model + API Key)'}
+          </button>
+          {pingResult && (
+            <div style={{
+              marginTop: '0.6rem', fontSize: '0.82rem', lineHeight: 1.4, wordBreak: 'break-word',
+              color: pingResult.ok ? '#66bb6a' : '#ef5350',
+            }}>
+              {pingResult.msg}
+            </div>
+          )}
         </div>
 
         <div style={{ marginBottom: '1.5rem' }}>
