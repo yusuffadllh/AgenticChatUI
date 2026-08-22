@@ -6,7 +6,8 @@
     "dev": "next dev -p 3005",
     "build": "next build",
     "start": "next start -p 3005",
-    "lint": "next lint"
+    "lint": "next lint",
+    "db:wal": "node scripts/enable-wal.js"
   },
   "dependencies": {
     "@prisma/adapter-better-sqlite3": "^7.9.1",

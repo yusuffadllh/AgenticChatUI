@@ -6,8 +6,9 @@ import { runOpencode } from '@/lib/opencode';
 import { buildBudgetedPrompt } from '@/lib/context';
 
 export const dynamic = 'force-dynamic';
-// Executor runs long-lived agent processes; allow up to ~30 min.
-export const maxDuration = 1800;
+// Executor runs long-lived agent processes; allow up to ~60 min (must stay >=
+// OpenCode's own maxTimeoutMs so the run isn't cut off by the HTTP route).
+export const maxDuration = 3600;
 
 export async function POST(request) {
   try {

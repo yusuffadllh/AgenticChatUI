@@ -5,7 +5,7 @@ import path from 'path';
 import crypto from 'crypto';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 300;
+export const maxDuration = 600;
 
 // Generate an image from a text prompt via the gateway's OpenAI-compatible
 // images endpoint, store it in chat-workspaces/<sessionId>/generated, and save

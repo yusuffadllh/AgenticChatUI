@@ -7,7 +7,7 @@ import { buildBudgetedPrompt } from '@/lib/context';
 
 export const dynamic = 'force-dynamic';
 // Deploy can take a while (install + build + upload); allow up to ~30 min.
-export const maxDuration = 1800;
+export const maxDuration = 3600;
 
 // Vercel project names: lowercase, alphanumeric + dashes, <=100 chars.
 function slugifyProjectName(raw) {

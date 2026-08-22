@@ -10,6 +10,10 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { cleanGoalInput } from '../lib/context';
 
+// Matches the auto-appended deploy task (see app/api/agent/route.js). Such a
+// task is a marker for the manual Deploy button, not work for the OpenCode loop.
+const DEPLOY_TASK_RE = /deploy|publish|luncurkan|terbitkan|online|go.?live|hosting/i;
+
 export default function Home() {
   const [settings, setSettings] = useState({ baseUrl: '', apiKey: '', modelName: '', vercelToken: '', netlifyToken: '' });
   const [showSettings, setShowSettings] = useState(false);
@@ -71,8 +75,12 @@ export default function Home() {
   const executeNextTask = async () => {
     if (!sessionId || !tasks.length || isStopped || executingSessions[sessionId]) return;
     
-    // Also pick up FAILED tasks so "mulai lagi" actually retries them.
-    const nextTask = tasks.find(t => t.status === 'PENDING' || t.status === 'RUNNING' || t.status === 'FAILED');
+    // Also pick up FAILED tasks so "mulai lagi" actually retries them. Skip the
+    // deploy marker task — that only runs via the manual Deploy button.
+    const nextTask = tasks.find(t =>
+      !DEPLOY_TASK_RE.test(t.description || '') &&
+      (t.status === 'PENDING' || t.status === 'RUNNING' || t.status === 'FAILED')
+    );
     if (!nextTask) return;
 
     const currentSessionId = sessionId;
@@ -339,7 +347,23 @@ export default function Home() {
 
   const handleDeploy = async () => {
     if (!sessionId || isDeploying) return;
-    if (!settings.vercelToken && !settings.netlifyToken) {
+
+    // Always re-read settings from the DB so a token added mid-run is picked up,
+    // even if the local React state is stale. The deploy API reads the DB too,
+    // so this only guards the pre-check + keeps the badges in sync.
+    let liveSettings = settings;
+    try {
+      const sRes = await fetch('/api/settings');
+      if (sRes.ok) {
+        const data = await sRes.json();
+        if (data) {
+          liveSettings = { ...settings, ...data };
+          setSettings(liveSettings);
+        }
+      }
+    } catch { /* fall back to current state */ }
+
+    if (!liveSettings.vercelToken && !liveSettings.netlifyToken) {
       alert('Belum ada kredensial deploy. Isi Vercel/Netlify token dulu di Settings.');
       setShowSettings(true);
       return;
@@ -386,6 +410,11 @@ export default function Home() {
                 if (data.liveUrl) {
                   setLiveLogs(prev => prev + `\n🌐 Live URL: ${data.liveUrl}\n`);
                 }
+                // Mark the deploy marker task done so the loop treats deploy as
+                // finished and never tries to run/re-deploy it.
+                setTasks(prev => prev.map(t =>
+                  DEPLOY_TASK_RE.test(t.description || '') ? { ...t, status: 'COMPLETED' } : t
+                ));
                 isDone = true;
               } else if (data.type === 'error') {
                 setLiveLogs(prev => prev + `❌ ${data.error}: ${data.details || ''}\n`);
@@ -477,10 +506,17 @@ export default function Home() {
 
   useEffect(() => {
     if (hasSubmitted && tasks.length > 0 && !isStopped && sessionId) {
-      const hasPending = tasks.some(t => t.status === 'PENDING');
-      const hasRunning = tasks.some(t => t.status === 'RUNNING');
-      const hasFailed = tasks.some(t => t.status === 'FAILED');
+      // A deploy task is a marker, not real work: it must NOT run through the
+      // OpenCode loop. It's satisfied only by the manual Deploy button.
+      const isDeployTask = (t) => DEPLOY_TASK_RE.test(t.description || '');
+      const workTasks = tasks.filter(t => !isDeployTask(t));
+      const deployTasks = tasks.filter(isDeployTask);
+
+      const hasPending = workTasks.some(t => t.status === 'PENDING');
+      const hasRunning = workTasks.some(t => t.status === 'RUNNING');
+      const hasFailed = workTasks.some(t => t.status === 'FAILED');
       const isExecuting = executingSessions[sessionId];
+      const pendingDeploy = deployTasks.some(t => t.status !== 'COMPLETED');
 
       if ((hasPending || hasRunning) && !isExecuting && !isReviewing) {
         // Normal work still queued — reset the retry budget and run it.
@@ -500,9 +536,16 @@ export default function Home() {
         }
       } else if (!hasPending && !hasRunning && !hasFailed && !isExecuting && !isReviewing) {
         autoRetriesRef.current = 0;
-        const limit = parseInt(maxLoops, 10);
-        if (isNaN(limit) || loopCount < limit) {
-          executeReview();
+        // All real work is done. If a deploy task is waiting, STOP the loop and
+        // let the user click Deploy — no more reviewing/looping.
+        if (pendingDeploy) {
+          setLiveLogs(prev => prev + `✅ Semua task selesai. Siap deploy — klik tombol "🚀 Deploy" untuk menerbitkan.\n`);
+          setIsStopped(true);
+        } else {
+          const limit = parseInt(maxLoops, 10);
+          if (isNaN(limit) || loopCount < limit) {
+            executeReview();
+          }
         }
       }
     }
@@ -563,6 +606,24 @@ export default function Home() {
                 <span style={{ fontSize: '0.72rem', padding: '0.25rem 0.6rem', borderRadius: '999px', background: 'rgba(129,199,132,0.12)', border: '1px solid rgba(129,199,132,0.3)', color: '#81c784' }}>
                   🔑 {maskApiKey(settings.apiKey)}
                 </span>
+                {settings.vercelToken ? (
+                  <span title="Token Vercel tersimpan — siap deploy" style={{ fontSize: '0.72rem', padding: '0.25rem 0.6rem', borderRadius: '999px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.35)', color: '#fff' }}>
+                    ▲ Vercel ✓
+                  </span>
+                ) : (
+                  <span title="Token Vercel belum diatur" style={{ fontSize: '0.72rem', padding: '0.25rem 0.6rem', borderRadius: '999px', background: 'rgba(255,255,255,0.04)', border: '1px dashed rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.5)' }}>
+                    ▲ Vercel —
+                  </span>
+                )}
+                {settings.netlifyToken ? (
+                  <span title="Token Netlify tersimpan — siap deploy" style={{ fontSize: '0.72rem', padding: '0.25rem 0.6rem', borderRadius: '999px', background: 'rgba(45,204,211,0.12)', border: '1px solid rgba(45,204,211,0.4)', color: '#2dccd3' }}>
+                    ◈ Netlify ✓
+                  </span>
+                ) : (
+                  <span title="Token Netlify belum diatur" style={{ fontSize: '0.72rem', padding: '0.25rem 0.6rem', borderRadius: '999px', background: 'rgba(45,204,211,0.04)', border: '1px dashed rgba(45,204,211,0.25)', color: 'rgba(45,204,211,0.5)' }}>
+                    ◈ Netlify —
+                  </span>
+                )}
               </div>
 
               {!hasSubmitted ? (

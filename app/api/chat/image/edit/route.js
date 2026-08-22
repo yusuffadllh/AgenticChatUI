@@ -5,7 +5,7 @@ import path from 'path';
 import crypto from 'crypto';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 300;
+export const maxDuration = 600;
 
 // Edit/modify an existing image (image-to-image). Tries the OpenAI-style
 // /images/edits endpoint first; if the gateway doesn't support it, falls back
