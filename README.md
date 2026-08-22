@@ -8,7 +8,7 @@ Semua berjalan lewat gateway yang OpenAI-compatible, jadi kamu bisa pakai model 
 
 ## ✨ Fitur
 
-- **🧠 Planner → Executor → Reviewer loop** — goal dipecah jadi 3-5 task, dieksekusi satu per satu, lalu direview otomatis untuk menambah task lanjutan sampai tuntas.
+- **🧠 Planner → Executor → Reviewer loop** — goal dipecah jadi sejumlah task sesuai kompleksitas (bisa sedikit atau banyak), dieksekusi satu per satu, lalu direview otomatis untuk menambah task lanjutan sampai tuntas.
 - **⚙️ Eksekusi nyata via OpenCode** — bukan sekadar teks; agent benar-benar membuat & mengubah file dan menjalankan command di workspace terisolasi per project.
 - **📡 Log real-time** — output OpenCode di-stream langsung ke UI (via SSE + PTY), jadi kamu lihat progres tanpa nunggu diam.
 - **📂 File browser** — jelajahi & lihat isi file setiap project langsung dari UI, seperti explorer.

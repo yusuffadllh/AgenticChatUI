@@ -58,7 +58,7 @@ export async function POST(request) {
       }
     });
 
-    const systemPrompt = `You are an AI planner. The user will give you a goal. Break down the goal into 3-5 high level tasks. You MUST respond with ONLY a valid JSON array of objects. Format: [{"description": "task 1"}, {"description": "task 2"}]`;
+    const systemPrompt = `You are an AI planner. The user will give you a goal. Break the goal down into the RIGHT number of high-level tasks based on its complexity — do NOT force a fixed count. A tiny task may need just 1-2 tasks; a normal feature 3-5; a large multi-part project 7-10 or more. Prefer splitting work into small, sequential, incremental steps rather than a few huge ones, because a reviewer loop will add follow-up tasks later as needed. You MUST respond with ONLY a valid JSON array of objects. Format: [{"description": "task 1"}, {"description": "task 2"}]`;
 
     // Call gateway for Planner, retrying on transient 429/5xx ("busy").
     const response = await fetchChatWithRetry(`${settings.baseUrl}/chat/completions`, {

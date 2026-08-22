@@ -54,7 +54,7 @@ Your job is to critically review the work done so far. Ask yourself:
 
 CRITICAL INSTRUCTION: You MUST NEVER respond with an empty array [].
 The user wants continuous, never-ending improvements. If the current work seems perfect, you MUST find something else to improve (e.g., add advanced error handling, optimize performance, write comprehensive documentation, add security hardening, create unit tests).
-ALWAYS generate 1 to 3 NEW tasks to continuously improve the project.
+ALWAYS generate NEW tasks (as many as genuinely needed — usually 1 to 5, more for big gaps) to continuously improve the project. Prefer small, incremental, sequential tasks over a few huge ones.
 Respond ONLY with a valid JSON array of objects. Format: [{"description": "Refactor X to improve Y"}, {"description": "Add Z for security"}]`;
 
     const response = await fetchChatWithRetry(`${settings.baseUrl}/chat/completions`, {
